@@ -146,17 +146,21 @@ object SyntaxHighlighter {
             applyRegex(text, operatorPatternStr, SpanStyle(color = theme.operatorColor))
 
             // 3. Highlight Numbers
-            val numberPatternStr = "\\b\\d+(\\.\\d+)?\\b"
+            val numberPatternStr = "\\b(0x[0-9a-fA-F]+|0b[01]+|\\d+(\\.\\d+)?([eE][+-]?\\d+)?)\\b"
             applyRegex(text, numberPatternStr, SpanStyle(color = theme.numberColor))
 
             // 4. Highlight Types
             val typePatternStr = when (lang) {
-                "kotlin", "java" -> "\\b(String|Int|Long|Double|Float|Boolean|Char|Byte|Short|Any|Unit|Void|List|Map|Set|Array|Collection|Sequence|ViewModel|StateFlow|MutableStateFlow|Context|Uri|Activity|Intent|Toast|Button|Text|Column|Row|Box|Card|Modifier|Color|Exception|Throwable|Override)\\b"
-                "python" -> "\\b(str|int|float|bool|list|dict|set|tuple|object|None|self|cls|Exception|TypeError|ValueError)\\b"
-                "javascript", "js", "node.js", "node" -> "\\b(String|Number|Boolean|Array|Object|Function|Promise|Symbol|Map|Set|Error|undefined|JSON|Math|Date|RegExp|Proxy)\\b"
-                "c", "cpp", "c++" -> "\\b(int|float|double|char|void|size_t|bool|string|vector|map|set|std|uint8_t|uint16_t|uint32_t|uint64_t|int8_t|int16_t|int32_t|int64_t)\\b"
-                "rust" -> "\\b(i8|i16|i32|i64|i128|u8|u16|u32|u64|u128|f32|f64|str|String|bool|char|Option|Result|Vec|HashMap|Box|Self|usize|isize)\\b"
-                "go" -> "\\b(string|int|int8|int16|int32|int64|uint|uint8|uint16|uint32|uint64|float32|float64|bool|byte|rune|error|any)\\b"
+                "kotlin", "java" -> "\\b(String|Int|Long|Double|Float|Boolean|Char|Byte|Short|Any|Unit|Void|List|Map|Set|Array|Collection|Sequence|ViewModel|StateFlow|MutableStateFlow|Context|Uri|Activity|Intent|Toast|Button|Text|Column|Row|Box|Card|Modifier|Color|Exception|Throwable|Override|it|this|super|field|value|null|true|false|Result|Pair|Triple|Optional|Stream|List|ArrayList|LinkedList|HashMap|HashSet|TreeMap|TreeSet|Queue|Deque|Stack|Thread|Runnable|Callable|Future|CompletableFuture)\\b"
+                "python" -> "\\b(str|int|float|bool|list|dict|set|tuple|object|None|self|cls|Exception|TypeError|ValueError|IndexError|KeyError|AttributeError|StopIteration|Generator|Iterator|Iterable|Mapping|Sequence|Set|AbstractContextManager|ContextManager|Coroutine|Awaitable|Callable|Any|Union|Optional|List|Dict|Tuple|Set|Type|NoReturn|ClassVar|Final|Literal|Protocol|TypedDict)\\b"
+                "javascript", "js", "node.js", "node", "typescript", "ts" -> "\\b(String|Number|Boolean|Array|Object|Function|Promise|Symbol|Map|Set|Error|undefined|JSON|Math|Date|RegExp|Proxy|Any|Void|Never|Unknown|BigInt|Int8Array|Uint8Array|Uint16Array|Int16Array|Int32Array|Uint32Array|Float32Array|Float64Array|BigInt64Array|BigUint64Array|Buffer|process|window|document|console|global|module|exports|require|URL|URLSearchParams|Blob|File|FormData|ReadableStream|WritableStream|AbortController|Event|CustomEvent|Storage|Location|History|Navigator|Performance|Screen|HTMLDocument|HTMLElement|HTMLInputElement|HTMLButtonElement|HTMLDivElement|HTMLSpanElement|HTMLImageElement|HTMLCanvasElement|HTMLAnchorElement|HTMLFormElement|HTMLSelectElement|HTMLOptionElement|HTMLTextAreaElement|HTMLVideoElement|HTMLAudioElement)\\b"
+                "c", "cpp", "c++" -> "\\b(int|float|double|char|void|size_t|bool|string|vector|map|set|std|uint8_t|uint16_t|uint32_t|uint64_t|int8_t|int16_t|int32_t|int64_t|auto|nullptr|FILE|DIR|time_t|clock_t|ssize_t|off_t|mode_t|pid_t|uid_t|gid_t|size_t|uintptr_t|intptr_t|ptrdiff_t|wchar_t|char16_t|char32_t|complex|imaginary)\\b"
+                "rust" -> "\\b(i8|i16|i32|i64|i128|u8|u16|u32|u64|u128|f32|f64|str|String|bool|char|Option|Result|Vec|HashMap|Box|Self|usize|isize|Option|Some|None|Ok|Err|Arc|Rc|RefCell|Mutex|RwLock|Duration|Instant|BTreeMap|BTreeSet|LinkedList|VecDeque|BinaryHeap|HashIndex|RawPtr|Pinned|Future|Stream|Send|Sync|Unpin|Clone|Copy|Debug|Default|Display|Error|From|Into|AsRef|AsMut|PartialEq|Eq|PartialOrd|Ord|Hash|Drop|Sized|Fn|FnMut|FnOnce)\\b"
+                "go" -> "\\b(string|int|int8|int16|int32|int64|uint|uint8|uint16|uint32|uint64|float32|float64|bool|byte|rune|error|any|complex64|complex128|uintptr|chan|map|interface|func|struct|Context|Reader|Writer|Closer|ReadWriter|Buffer|Error|Time|Duration|Channel|Slice|Map|Interface)\\b"
+                "php" -> "\\b(int|float|string|bool|array|object|callable|iterable|resource|null|void|mixed|never|false|true|stdClass|Exception|Error|Throwable|ArrayObject|DateTime|DateTimeImmutable|DateTimeZone|DateInterval|DatePeriod|Closure|Generator|WeakReference|WeakMap|Stringable|Iterator|Aggregate|ArrayAccess|Serializable|Countable|OuterIterator|RecursiveIterator|SeekableIterator|SplObserver|SplSubject)\\b"
+                "ruby" -> "\\b(String|Integer|Float|Array|Hash|Symbol|Range|Regexp|TrueClass|FalseClass|NilClass|Class|Module|Object|Kernel|Binding|Proc|Method|UnboundMethod|Thread|ThreadGroup|Mutex|ConditionVariable|Queue|SizedQueue|Exception|StandardError|RuntimeError|Struct|Data|File|Dir|IO|Math|Process|Signal|Time|Random|Range|Enumerable|Comparable)\\b"
+                "swift" -> "\\b(String|Int|Float|Double|Bool|Character|Array|Dictionary|Set|Optional|Any|AnyObject|Void|Int8|Int16|Int32|Int64|UInt|UInt8|UInt16|UInt32|UInt64|Float80|CGFloat|Error|Protocol|Type|Self|self|static|class|struct|enum|extension|func|var|let|if|else|switch|case|default|for|while|repeat|do|try|catch|throw|return|break|continue|fallthrough|guard|defer|import|public|internal|private|fileprivate|open|final|override|required|optional|lazy|weak|unowned|typealias|associatedtype|generic|where|dynamic|convenience|mutating|nonmutating|infix|prefix|postfix|operator|precedencegroup|associatedtype|none|some|any)\\b"
+                "csharp", "cs" -> "\\b(string|int|long|short|byte|sbyte|uint|ulong|ushort|float|double|decimal|bool|char|object|dynamic|void|List|Dictionary|IEnumerable|ICollection|IList|Task|Exception|DateTime|TimeSpan|Guid|Console|Math|Array|Int32|Int64|UInt32|UInt64|Boolean|String|Object|Type|Enum|Delegate|EventHandler|Action|Func|Predicate|Tuple|ValueTuple|Nullable|Span|ReadOnlySpan|Memory|ReadOnlyMemory|CancellationToken|Stream|File|Directory|Path|Socket|HttpClient|Thread|TaskCompletionSource)\\b"
                 else -> ""
             }
             if (typePatternStr.isNotEmpty()) {
@@ -164,11 +168,19 @@ object SyntaxHighlighter {
             }
 
             // 5. Highlight Functions
-            val functionPatternStr = "\\b[a-zA-Z_][a-zA-Z0-9_]*(?=\\)"
+            val functionPatternStr = "\\b[a-zA-Z_][a-zA-Z0-9_]*(?=\\()"
             applyRegex(text, functionPatternStr, SpanStyle(color = theme.functionColor, fontWeight = FontWeight.SemiBold))
 
             // 6. Highlight Keywords or specific patterns depending on language
             if (lang == "html" || lang == "xml") {
+                // XML/HTML Doctype
+                val htmlDoctypePattern = "<![dD][oO][cC][tT][yY][pP][eE][^>]*>"
+                applyRegex(text, htmlDoctypePattern, SpanStyle(color = theme.keywordColor, fontWeight = FontWeight.Bold))
+
+                // XML/HTML Brackets
+                val htmlBracketPatternStr = "</?|/?>"
+                applyRegex(text, htmlBracketPatternStr, SpanStyle(color = theme.tagColor))
+
                 // XML/HTML tags
                 val htmlTagPatternStr = "(?<=</?)[a-zA-Z0-9:-]+"
                 applyRegex(text, htmlTagPatternStr, SpanStyle(color = theme.tagColor, fontWeight = FontWeight.Bold))
@@ -176,6 +188,70 @@ object SyntaxHighlighter {
                 // XML/HTML attributes
                 val htmlAttrPatternStr = "\\b[a-zA-Z0-9:-]+(?=\\s*=)"
                 applyRegex(text, htmlAttrPatternStr, SpanStyle(color = theme.attrColor))
+
+                // HTML Entities
+                val htmlEntityPattern = "&[a-zA-Z0-9#]+;"
+                applyRegex(text, htmlEntityPattern, SpanStyle(color = theme.functionColor))
+
+                // CSS in Style Tags (simplified but richer)
+                val cssPropertyPattern = "(?<=[:{;])\\s*[a-zA-Z-]+(?=\\s*:)"
+                applyRegex(text, cssPropertyPattern, SpanStyle(color = theme.attrColor))
+
+                // CSS class selectors inside style blocks (e.g. .class-name {)
+                val htmlCssClassPattern = "\\.[a-zA-Z0-9_-]+(?=\\s*\\{)"
+                applyRegex(text, htmlCssClassPattern, SpanStyle(color = theme.functionColor))
+
+                // CSS id selectors inside style blocks (e.g. #id-name {)
+                val htmlCssIdPattern = "#[a-zA-Z0-9_-]+(?=\\s*\\{)"
+                applyRegex(text, htmlCssIdPattern, SpanStyle(color = theme.typeColor, fontWeight = FontWeight.SemiBold))
+
+                // CSS hex colors
+                val htmlCssHexPattern = "#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\\b"
+                applyRegex(text, htmlCssHexPattern, SpanStyle(color = theme.numberColor))
+
+                // CSS units inside style tags
+                val htmlCssUnitPattern = "(?<=\\d)(px|rem|em|vh|vw|%|deg|s|ms)\\b"
+                applyRegex(text, htmlCssUnitPattern, SpanStyle(color = theme.keywordColor))
+            } else if (lang == "css") {
+                // 1. Selector Tags (HTML elements)
+                val cssTagPattern = "\\b(html|body|div|span|p|a|ul|ol|li|h1|h2|h3|h4|h5|h6|img|button|input|textarea|select|form|header|footer|section|article|aside|nav|main|canvas|style|script|svg|path|g|iframe|hr|br|table|thead|tbody|tfoot|tr|th|td|audio|video|picture|object|embed|figure|figcaption|details|summary|dialog|meta|link|title|head)\\b"
+                applyRegex(text, cssTagPattern, SpanStyle(color = theme.tagColor, fontWeight = FontWeight.Bold))
+
+                // 2. Class Selectors: .class-name
+                val cssClassPattern = "\\.[a-zA-Z_][a-zA-Z0-9_-]*"
+                applyRegex(text, cssClassPattern, SpanStyle(color = theme.functionColor))
+
+                // 3. ID Selectors: #id-name
+                val cssIdPattern = "#[a-zA-Z_][a-zA-Z0-9_-]*"
+                applyRegex(text, cssIdPattern, SpanStyle(color = theme.typeColor, fontWeight = FontWeight.SemiBold))
+
+                // 4. Pseudo-classes & Pseudo-elements: :hover, :active, ::before, :nth-child
+                val cssPseudoPattern = "::?[a-zA-Z0-9_-]+(\\([^)]*\\))?"
+                applyRegex(text, cssPseudoPattern, SpanStyle(color = theme.keywordColor))
+
+                // 5. CSS Properties: color, background-color, etc. (followed by :)
+                val cssPropertyPattern = "[a-zA-Z0-9_-]+(?=\\s*:)"
+                applyRegex(text, cssPropertyPattern, SpanStyle(color = theme.attrColor))
+
+                // 6. CSS values and keywords
+                val cssValueKeywords = "\\b(block|inline-block|inline|flex|grid|none|absolute|relative|fixed|sticky|static|inherit|initial|unset|auto|center|left|right|justify|uppercase|lowercase|capitalize|bold|normal|italic|sans-serif|serif|monospace|pointer|default|border-box|content-box|wrap|nowrap|row|column|both|hidden|visible|scroll|transparent|solid|dashed|dotted|double|none|important)\\b"
+                applyRegex(text, cssValueKeywords, SpanStyle(color = theme.keywordColor))
+
+                // 7. CSS Hex Colors
+                val cssHexColorPattern = "#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\\b"
+                applyRegex(text, cssHexColorPattern, SpanStyle(color = theme.numberColor))
+
+                // 8. CSS Custom Properties / Variables: --primary-color
+                val cssVarPattern = "--[a-zA-Z0-9_-]+"
+                applyRegex(text, cssVarPattern, SpanStyle(color = theme.typeColor))
+
+                // 9. CSS Units (px, em, rem, %, vh, vw, etc.)
+                val cssUnitPattern = "(?<=\\d)(px|rem|em|vh|vw|%|deg|s|ms|pt|pc|ex|ch|fr)\\b"
+                applyRegex(text, cssUnitPattern, SpanStyle(color = theme.keywordColor))
+
+                // 10. CSS At-rules: @media, @import, @keyframes
+                val cssAtRulePattern = "@[a-zA-Z0-9_-]+"
+                applyRegex(text, cssAtRulePattern, SpanStyle(color = theme.keywordColor, fontWeight = FontWeight.Bold))
             } else if (lang == "json") {
                 // JSON Keys
                 val jsonKeyPatternStr = "\"[^\"]+\"(?=\\s*:)"
@@ -202,26 +278,27 @@ object SyntaxHighlighter {
                 applyRegex(text, mdCodePatternStr, SpanStyle(color = theme.stringColor, fontFamily = FontFamily.Monospace))
             } else {
                 val keywordPatternStr = when (lang) {
-                    "python" -> "\\b(def|class|import|from|return|if|elif|else|while|for|in|try|except|print|as|with|lambda|and|or|not|True|False|None|assert|break|continue|del|global|nonlocal|pass|raise|yield)\\b"
-                    "javascript", "js", "node.js", "node" -> "\\b(const|let|var|function|return|if|else|for|while|import|export|from|require|class|try|catch|console|async|await|new|this|typeof|instanceof|true|false|null|undefined|break|continue|default|do|switch|case|throw|extends|super|debugger|in|of|yield)\\b"
-                    "kotlin" -> "\\b(val|var|fun|class|interface|object|import|package|return|if|else|when|for|while|try|catch|finally|true|false|null|this|super|private|protected|public|internal|break|continue|constructor|delegate|init|as|is|in|throw|out|companion|by|get|set|field|suspend|coroutineScope|launch|async|flow|collect|withContext)\\b"
-                    "java" -> "\\b(class|interface|enum|extends|implements|import|package|public|private|protected|static|final|abstract|native|synchronized|transient|volatile|strictfp|return|if|else|switch|case|default|while|do|for|break|continue|try|catch|finally|throw|throws|new|this|super|instanceof|true|false|null|void|boolean|char|byte|short|int|long|float|double)\\b"
-                    "css" -> "\\b(color|background|margin|padding|border|display|position|width|height|font|text|align|justify|align|items|flex|grid|box|shadow|border|radius|opacity|transition|animation|z|index|top|left|right|bottom|overflow|float|clear|cursor|visibility|pointer|events|none|important|media|keyframes)\\b"
-                    "sql" -> "(?i)\\b(select|from|where|join|left|right|inner|outer|on|insert|into|values|update|set|delete|create|table|index|drop|alter|add|column|primary|key|foreign|references|unique|not|null|default|check|constraint|and|or|not|in|between|like|is|as|group|by|having|order|limit|offset|count|sum|avg|min|max|union|all|distinct)\\b"
-                    "c", "cpp", "c++" -> "\\b(if|else|while|for|do|return|break|continue|switch|case|default|class|struct|union|enum|typedef|public|private|protected|virtual|override|friend|inline|const|static|volatile|mutable|register|sizeof|new|delete|try|catch|throw|namespace|using|template|typename|operator|explicit|extern|goto)\\b"
-                    "rust" -> "\\b(fn|let|mut|impl|struct|enum|match|use|mod|pub|return|if|else|while|for|in|as|const|static|type|trait|unsafe|loop|break|continue|crate|extern|move|ref|self|where|dyn|async|await|macro_rules)\\b"
-                    "go" -> "\\b(func|package|import|var|const|type|struct|interface|return|if|else|for|range|switch|case|default|go|chan|map|select|defer|fallthrough|goto|type|package|import|interface)\\b"
+                    "python" -> "\\b(def|class|import|from|return|if|elif|else|while|for|in|try|except|finally|print|as|with|lambda|and|or|not|True|False|None|assert|break|continue|del|global|nonlocal|pass|raise|yield|is|type|len|range|open|list|dict|set|tuple|enumerate|zip|map|filter|all|any|str|int|float|bool|input|abs|round|min|max|sum|sorted|reversed|help|dir|vars|globals|locals|eval|exec)\\b"
+                    "javascript", "js", "node.js", "node", "typescript", "ts" -> "\\b(const|let|var|function|return|if|else|for|while|import|export|from|require|class|try|catch|console|async|await|new|this|typeof|instanceof|true|false|null|undefined|break|continue|default|do|switch|case|throw|extends|super|debugger|in|of|yield|interface|enum|type|namespace|as|get|set|static|private|protected|public|readonly|module|declare|abstract|implements|keyof|readonly|infer)\\b"
+                    "kotlin" -> "\\b(val|var|fun|class|interface|object|import|package|return|if|else|when|for|while|try|catch|finally|true|false|null|this|super|private|protected|public|internal|break|continue|constructor|delegate|init|as|is|in|throw|out|companion|by|get|set|field|suspend|coroutineScope|launch|async|flow|collect|withContext|inline|noinline|crossinline|external|tailrec|operator|infix|sealed|data|annotation|tailrec|lateinit|inner|abstract|open|final|override|reified|vararg|expect|actual)\\b"
+                    "java" -> "\\b(class|interface|enum|extends|implements|import|package|public|private|protected|static|final|abstract|native|synchronized|transient|volatile|strictfp|return|if|else|switch|case|default|while|do|for|break|continue|try|catch|finally|throw|throws|new|this|super|instanceof|true|false|null|void|boolean|char|byte|short|int|long|float|double|record|sealed|permits|non-sealed|yield|var|transient)\\b"
+                    "sql" -> "(?i)\\b(select|from|where|join|left|right|inner|outer|on|insert|into|values|update|set|delete|create|table|index|drop|alter|add|column|primary|key|foreign|references|unique|not|null|default|check|constraint|and|or|not|in|between|like|is|as|group|by|having|order|limit|offset|count|sum|avg|min|max|union|all|distinct|exists|any|all|some|case|when|then|else|end|cast|coalesce|nullif|between|interval|returning|with|recursive|pivot|unpivot|window|over|partition|rank|dense_rank|row_number|lag|lead|first_value|last_value)\\b"
+                    "c", "cpp", "c++" -> "\\b(if|else|while|for|do|return|break|continue|switch|case|default|class|struct|union|enum|typedef|public|private|protected|virtual|override|friend|inline|const|static|volatile|mutable|register|sizeof|new|delete|try|catch|throw|namespace|using|template|typename|operator|explicit|extern|goto|nullptr|alignas|alignof|asm|atomic|char16_t|char32_t|concept|consteval|constexpr|constinit|decltype|explicit|export|inline|mutable|noexcept|requires|static_assert|thread_local|typeid)\\b"
+                    "rust" -> "\\b(fn|let|mut|impl|struct|enum|match|use|mod|pub|return|if|else|while|for|in|as|const|static|type|trait|unsafe|loop|break|continue|crate|extern|move|ref|self|where|dyn|async|await|macro_rules|Box|Option|Result|Some|None|Ok|Err|panic|vec|String|str|u8|u16|u32|u64|u128|usize|i8|i16|i32|i64|i128|isize|f32|f64|bool|char|Self|yield|super|macro)\\b"
+                    "go" -> "\\b(func|var|const|type|struct|interface|package|import|return|if|else|switch|case|default|for|range|break|continue|go|select|chan|defer|map|iota|nil|true|false|make|new|len|cap|append|copy|delete|panic|recover|print|println|error)\\b"
+                    "php" -> "\\b(function|class|interface|trait|extends|implements|namespace|use|return|if|else|elseif|while|for|foreach|as|do|switch|case|default|break|continue|try|catch|finally|throw|new|public|protected|private|static|final|abstract|const|echo|print|include|require|include_once|require_once|global|static|var|list|array|empty|isset|unset|null|true|false|static|parent|self|void|int|float|string|bool|callable|iterable|object|mixed|never|enum|readonly)\\b"
+                    "ruby" -> "\\b(def|class|module|if|else|elsif|unless|while|until|for|in|begin|end|rescue|ensure|retry|yield|super|self|nil|true|false|and|or|not|next|break|redo|retry|alias|undef|defined?|do|then|case|when|module_function|public|protected|private|attr_accessor|attr_reader|attr_writer|extend|include|prepend|require|require_relative|load)\\b"
+                    "shell", "sh", "bash" -> "\\b(if|then|else|elif|fi|case|esac|for|while|until|do|done|in|function|local|return|exit|break|continue|read|echo|printf|set|export|unset|alias|unalias|source|eval|exec|true|false|shift|test|trap|wait|umask)\\b"
+                    "swift" -> "\\b(func|class|struct|enum|extension|protocol|init|deinit|var|let|if|else|switch|case|default|for|while|repeat|do|try|catch|throw|return|break|continue|fallthrough|guard|defer|import|public|internal|private|fileprivate|open|static|final|override|required|optional|lazy|weak|unowned|self|Self|nil|true|false|typealias|associatedtype|generic|where|dynamic|convenience|mutating|nonmutating|infix|prefix|postfix|operator|precedencegroup|associatedtype|none|some|any)\\b"
+                    "csharp", "cs" -> "\\b(abstract|as|base|bool|break|byte|case|catch|char|checked|class|const|continue|decimal|default|delegate|do|double|else|enum|event|explicit|extern|false|finally|fixed|float|for|foreach|goto|if|implicit|in|int|interface|internal|is|lock|long|namespace|new|null|object|operator|out|override|params|private|protected|public|readonly|ref|return|sbyte|sealed|short|sizeof|stackalloc|static|string|struct|switch|this|throw|true|try|typeof|uint|ulong|unchecked|unsafe|ushort|using|virtual|void|volatile|while|add|alias|ascending|async|await|by|descending|dynamic|equals|from|get|global|group|into|join|let|nameof|on|orderby|partial|remove|select|set|unmanaged|value|var|when|where|with|yield)\\b"
                     else -> "\\b(if|else|while|for|return|class|import|function|def|let|const|var|public|private|val|fun)\\b"
                 }
                 applyRegex(text, keywordPatternStr, SpanStyle(color = theme.keywordColor, fontWeight = FontWeight.Bold))
 
-                // Extra annotations for Kotlin/Java/Python
-                if (lang == "kotlin" || lang == "java") {
-                    val annotationPatternStr = "@[a-zA-Z_][a-zA-Z0-9_]*"
+                // Extra annotations/decorators
+                if (lang == "kotlin" || lang == "java" || lang == "python") {
+                    val annotationPatternStr = "@[a-zA-Z_][a-zA-Z0-9_.]*"
                     applyRegex(text, annotationPatternStr, SpanStyle(color = theme.operatorColor, fontWeight = FontWeight.Medium))
-                } else if (lang == "python") {
-                    val decoratorPatternStr = "@[a-zA-Z_][a-zA-Z0-9_]*"
-                    applyRegex(text, decoratorPatternStr, SpanStyle(color = theme.operatorColor, fontWeight = FontWeight.Medium))
                 }
             }
 

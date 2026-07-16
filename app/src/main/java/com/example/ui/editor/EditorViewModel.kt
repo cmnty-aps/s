@@ -74,7 +74,9 @@ class EditorViewModel(private val repository: EditorRepository) : ViewModel() {
  \___/|_||_||_|\_||___/|_|
 
 Developer Terminal v1.0
-Ketik 'shh' untuk akses terminal.
+Ketika menggunakan terminal, pastikan Anda terhubung ke internet.
+Fitur lainnya bekerja sepenuhnya secara OFFLINE.
+Ketik 'ssh' untuk akses terminal.
 
 """.trimIndent()
     )

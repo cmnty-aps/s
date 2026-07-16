@@ -24,6 +24,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -111,6 +115,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
 
     // Editor Text Field State linked with selection
     var editorTextFieldValue by remember { mutableStateOf(TextFieldValue("")) }
+    val sharedVerticalScrollState = rememberScrollState()
 
     // Undo / Redo histories
     val undoStack = remember { mutableStateListOf<String>() }
@@ -240,6 +245,28 @@ fun EditorScreen(viewModel: EditorViewModel) {
         }
     }
 
+    // Auto-scroll when cursor position changes
+    LaunchedEffect(editorTextFieldValue.selection) {
+        if (editorTextFieldValue.selection.collapsed) {
+            val cursorIndex = editorTextFieldValue.selection.start
+            val textBeforeCursor = editorTextFieldValue.text.substring(0, cursorIndex)
+            val lineIndex = textBeforeCursor.count { it == '\n' }
+            
+            // Approximate line height based on font size
+            val density = context.resources.displayMetrics.density
+            val lineHeight = (fontSize.value * density * 1.4f).toInt()
+            val targetScroll = lineIndex * lineHeight
+            
+            // Check if target is out of view
+            val currentScroll = sharedVerticalScrollState.value
+            val viewportHeight = (configuration.screenHeightDp * density * 0.4f).toInt() // Roughly 40% of screen height
+            
+            if (targetScroll < currentScroll || targetScroll > (currentScroll + viewportHeight)) {
+                sharedVerticalScrollState.animateScrollTo((targetScroll - (viewportHeight / 2)).coerceAtLeast(0))
+            }
+        }
+    }
+
     // Photo picker launcher for custom backgrounds
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -316,19 +343,19 @@ fun EditorScreen(viewModel: EditorViewModel) {
         }
 
         Scaffold(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().statusBarsPadding(),
         topBar = {
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
+                    .height(64.dp),
                 color = MaterialTheme.colorScheme.surface,
                 shadowElevation = 4.dp
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 4.dp),
+                        .padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Navigation Icon
@@ -836,7 +863,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                 }
                             }
 
-                            val sharedVerticalScrollState = rememberScrollState()
+
                             // Search and Replace Panel (Sliding overlay)
                             AnimatedVisibility(
                                 visible = isSearchPanelActive,
@@ -1073,34 +1100,32 @@ fun EditorScreen(viewModel: EditorViewModel) {
 
                 // Optional Live Split HTML preview
                 if (selectedFile != null && isLivePreviewActive && (selectedFile!!.language.lowercase() == "html" || selectedFile!!.language.lowercase() == "css")) {
-                    Spacer(Modifier.width(8.dp))
-                    Card(
+                    Spacer(Modifier.width(0.dp))
+                    Surface(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight(),
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        border = BorderStroke(1.dp, Color.Gray.copy(alpha = 0.3f)),
-                        shape = RoundedCornerShape(12.dp)
+                        color = Color.White
                     ) {
                         Column(modifier = Modifier.fillMaxSize()) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .background(Color(0xFFEFEFEF))
-                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Default.Language, contentDescription = null, tint = Color.DarkGray, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("PREVIEW BROWSER AKTIF", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.DarkGray)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("BROWSER PREVIEW", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.DarkGray)
                                 }
                                 IconButton(
                                     onClick = { isLivePreviewActive = false },
                                     modifier = Modifier.size(24.dp)
                                 ) {
-                                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.DarkGray, modifier = Modifier.size(16.dp))
+                                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.DarkGray, modifier = Modifier.size(18.dp))
                                 }
                             }
                             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -1112,14 +1137,24 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                             getSettings().databaseEnabled = false
                                             getSettings().domStorageEnabled = true
                                             webViewClient = WebViewClient()
+                                            // Transparent background
+                                            setBackgroundColor(0)
                                         }
                                     },
                                      update = { webView ->
-                                         val bundledHtml = if (selectedFile != null && selectedFile!!.language.lowercase() == "html") {
+                                         val rawHtml = if (selectedFile != null && selectedFile!!.language.lowercase() == "html") {
                                              viewModel.getBundledHtml(context, selectedFile!!)
                                          } else {
                                              selectedFile?.content ?: ""
                                          }
+                                         
+                                         // Inject a simple CSS reset to avoid gaps
+                                         val bundledHtml = if (rawHtml.contains("<head>", ignoreCase = true)) {
+                                             rawHtml.replace("<head>", "<head><style>body { margin: 0; padding: 0; }</style>", ignoreCase = true)
+                                         } else {
+                                             "<style>body { margin: 0; padding: 0; }</style>$rawHtml"
+                                         }
+
                                          webView.loadDataWithBaseURL(
                                              "file:///",
                                              bundledHtml,
@@ -1145,14 +1180,16 @@ fun EditorScreen(viewModel: EditorViewModel) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(180.dp),
-                    shape = androidx.compose.ui.graphics.RectangleShape,
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0C0C0F))
+                        .height(280.dp),
+                    shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0C0C0F)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
                 ) {
                     Column(modifier = Modifier.fillMaxSize()) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
                                 .background(Color.Black)
                                 .padding(horizontal = 12.dp, vertical = 6.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -1351,7 +1388,10 @@ fun EditorScreen(viewModel: EditorViewModel) {
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.End
                     ) {
-                        TextButton(onClick = { showRootNewFileDialog = false }) {
+                        TextButton(
+                            onClick = { showRootNewFileDialog = false },
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary)
+                        ) {
                             Text("Batal")
                         }
                         Spacer(Modifier.width(12.dp))
@@ -1363,7 +1403,8 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                 } else {
                                     Toast.makeText(context, "Nama tidak boleh kosong", Toast.LENGTH_SHORT).show()
                                 }
-                            }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
                         ) {
                             Text("Buat")
                         }
@@ -1594,7 +1635,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                     )
 
                     Spacer(Modifier.height(16.dp))
-                    Text("Integrasi GitHub:", fontSize = 12.sp, color = Color.Gray)
+                    Text("Integrasi GitHub (Memerlukan Internet):", fontSize = 12.sp, color = Color.Gray)
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = tokenInput,
@@ -1662,7 +1703,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                     }
 
                     Spacer(Modifier.height(16.dp))
-                    Text("Konfigurasi SSH Terminal:", fontSize = 12.sp, color = Color.Gray)
+                    Text("Konfigurasi SSH Terminal (Memerlukan Internet):", fontSize = 12.sp, color = Color.Gray)
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = sshHostInput,
