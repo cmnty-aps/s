@@ -28,23 +28,6 @@ data class EditorTheme(
     val isDark: Boolean = true
 ) {
     companion object {
-        val Monokai = EditorTheme(
-            name = "Monokai",
-            background = Color(0xFF272822),
-            foreground = Color(0xFFF8F8F2),
-            keywordColor = Color(0xFFF92672), // Pink
-            functionColor = Color(0xFF66D9EF), // Blue
-            stringColor = Color(0xFFE6DB74), // Yellow
-            numberColor = Color(0xFFAE81FF), // Purple
-            commentColor = Color(0xFF75715E), // Gray/Green
-            operatorColor = Color(0xFFFD971F), // Orange
-            typeColor = Color(0xFF66D9EF), // Light Blue
-            tagColor = Color(0xFFF92672), // Pink
-            attrColor = Color(0xFFA6E22E), // Green
-            bracketColor = Color(0xFFF8F8F2),
-            isDark = true
-        )
-
         val VSCodeDark = EditorTheme(
             name = "VS Code Dark",
             background = Color(0xFF1E1E1E),
@@ -60,40 +43,6 @@ data class EditorTheme(
             attrColor = Color(0xFF9CDCFE), // Light Blue
             bracketColor = Color(0xFFF1D700), // Yellow
             isDark = true
-        )
-
-        val RetroTerminal = EditorTheme(
-            name = "Retro Terminal",
-            background = Color(0xFF000000),
-            foreground = Color(0xFF33FF33), // Terminal Green
-            keywordColor = Color(0xFF00FF00),
-            functionColor = Color(0xFF88FF88),
-            stringColor = Color(0xFF00FFFF), // Cyan
-            numberColor = Color(0xFFFFFF00), // Yellow
-            commentColor = Color(0xFF555555), // Dark Gray
-            operatorColor = Color(0xFF33FF33),
-            typeColor = Color(0xFF88FF88),
-            tagColor = Color(0xFF00FF00),
-            attrColor = Color(0xFF00FFFF),
-            bracketColor = Color(0xFF00FF00),
-            isDark = true
-        )
-
-        val GithubLight = EditorTheme(
-            name = "Github Light",
-            background = Color(0xFFFFFFFF),
-            foreground = Color(0xFF24292E),
-            keywordColor = Color(0xFFD73A49), // Red
-            functionColor = Color(0xFF6F42C1), // Purple
-            stringColor = Color(0xFF032F62), // Dark Blue
-            numberColor = Color(0xFF005CC5), // Light Blue
-            commentColor = Color(0xFF6A737D), // Gray
-            operatorColor = Color(0xFFD73A49),
-            typeColor = Color(0xFFE36209), // Orange
-            tagColor = Color(0xFF22863A), // Green
-            attrColor = Color(0xFF6F42C1), // Purple
-            bracketColor = Color(0xFF24292E),
-            isDark = false
         )
 
         val Nord = EditorTheme(
@@ -166,15 +115,12 @@ data class EditorTheme(
 
         fun fromName(name: String): EditorTheme {
             return when (name.lowercase()) {
-                "monokai" -> Monokai
                 "vs code dark" -> VSCodeDark
-                "retro terminal" -> RetroTerminal
-                "github light" -> GithubLight
                 "nord" -> Nord
                 "dracula" -> Dracula
                 "one dark" -> OneDark
                 "solarized dark" -> SolarizedDark
-                else -> Monokai
+                else -> VSCodeDark
             }
         }
     }

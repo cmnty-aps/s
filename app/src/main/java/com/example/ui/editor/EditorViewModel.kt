@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
 import java.util.regex.Pattern
+import java.util.regex.Matcher
 
 import androidx.documentfile.provider.DocumentFile
 
@@ -51,6 +52,9 @@ class EditorViewModel(private val repository: EditorRepository) : ViewModel() {
     val files: StateFlow<List<CodeFile>> = repository.allFiles
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    private val _openFiles = MutableStateFlow<List<CodeFile>>(emptyList())
+    val openFiles: StateFlow<List<CodeFile>> = _openFiles.asStateFlow()
+
     private val _selectedFile = MutableStateFlow<CodeFile?>(null)
     val selectedFile: StateFlow<CodeFile?> = _selectedFile.asStateFlow()
 
@@ -65,10 +69,9 @@ class EditorViewModel(private val repository: EditorRepository) : ViewModel() {
     // Terminal State
     private val _terminalOutput = MutableStateFlow(
         """
- ___ _  _ _  _ ___ _   _
-/ __| \/ | \/ |_ _|\ \_/ /
-\__ | |  | |  | | |  \   / 
-|___|_|__|_|__|_| |_|  |_| 
+  ___  _  _  _  _  ___ _ _
+ /  _|| \/ || \| ||_ _\ V /
+ \___/|_||_||_|\_||___/|_|
 
 Developer Terminal v1.0
 Ketik 'shh' untuk akses terminal.
@@ -78,6 +81,119 @@ Ketik 'shh' untuk akses terminal.
     val terminalOutput: StateFlow<String> = _terminalOutput.asStateFlow()
 
     // Status loadings
+    fun getBundledHtml(context: Context, file: CodeFile): String {
+        var html = file.content
+        val path = file.githubPath
+        if (path.isEmpty()) return html
+        
+        val parentPath = path.substringBeforeLast("/", "")
+        if (parentPath.isEmpty()) return html
+
+        // 1. Resolve CSS
+        try {
+            val linkPattern = Pattern.compile("<link[^>]+href=[\"']([^\"']+\\.css)[\"'][^>]*>", Pattern.CASE_INSENSITIVE)
+            val linkMatcher = linkPattern.matcher(html)
+            val htmlWithInjectedCss = StringBuffer()
+            while (linkMatcher.find()) {
+                val href = linkMatcher.group(1)
+                if (!href.startsWith("http") && !href.startsWith("//") && !href.startsWith("data:")) {
+                    val cssContent = readFileRelativeTo(context, parentPath, href)
+                    if (cssContent != null) {
+                        linkMatcher.appendReplacement(htmlWithInjectedCss, Matcher.quoteReplacement("<style>\n$cssContent\n</style>"))
+                    } else {
+                        linkMatcher.appendReplacement(htmlWithInjectedCss, linkMatcher.group(0))
+                    }
+                } else {
+                    linkMatcher.appendReplacement(htmlWithInjectedCss, linkMatcher.group(0))
+                }
+            }
+            linkMatcher.appendTail(htmlWithInjectedCss)
+            html = htmlWithInjectedCss.toString()
+        } catch (e: Exception) {}
+
+        // 2. Resolve JS
+        try {
+            val scriptPattern = Pattern.compile("<script[^>]+src=[\"']([^\"']+\\.js)[\"'][^>]*>\\s*</script>", Pattern.CASE_INSENSITIVE)
+            val scriptMatcher = scriptPattern.matcher(html)
+            val htmlWithInjectedJs = StringBuffer()
+            while (scriptMatcher.find()) {
+                val src = scriptMatcher.group(1)
+                if (!src.startsWith("http") && !src.startsWith("//") && !src.startsWith("data:")) {
+                    val jsContent = readFileRelativeTo(context, parentPath, src)
+                    if (jsContent != null) {
+                        scriptMatcher.appendReplacement(htmlWithInjectedJs, Matcher.quoteReplacement("<script>\n$jsContent\n</script>"))
+                    } else {
+                        scriptMatcher.appendReplacement(htmlWithInjectedJs, scriptMatcher.group(0))
+                    }
+                } else {
+                    scriptMatcher.appendReplacement(htmlWithInjectedJs, scriptMatcher.group(0))
+                }
+            }
+            scriptMatcher.appendTail(htmlWithInjectedJs)
+            html = htmlWithInjectedJs.toString()
+        } catch (e: Exception) {}
+
+        // 3. Resolve Images and other SRCS (Base64)
+        try {
+            val srcPattern = Pattern.compile("(src|href)=[\"']([^\"']+\\.(png|jpg|jpeg|gif|svg|webp))[\"']", Pattern.CASE_INSENSITIVE)
+            val srcMatcher = srcPattern.matcher(html)
+            val htmlWithInjectedAssets = StringBuffer()
+            while (srcMatcher.find()) {
+                val attr = srcMatcher.group(1)
+                val src = srcMatcher.group(2)
+                val ext = srcMatcher.group(3).lowercase()
+                
+                if (!src.startsWith("http") && !src.startsWith("//") && !src.startsWith("data:")) {
+                    val bytes = readFileBytesRelativeTo(context, parentPath, src)
+                    if (bytes != null) {
+                        val mimeType = when(ext) {
+                            "svg" -> "image/svg+xml"
+                            "jpg", "jpeg" -> "image/jpeg"
+                            else -> "image/$ext"
+                        }
+                        val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                        val dataUri = "data:$mimeType;base64,$base64"
+                        srcMatcher.appendReplacement(htmlWithInjectedAssets, Matcher.quoteReplacement("$attr=\"$dataUri\""))
+                    } else {
+                        srcMatcher.appendReplacement(htmlWithInjectedAssets, srcMatcher.group(0))
+                    }
+                } else {
+                    srcMatcher.appendReplacement(htmlWithInjectedAssets, srcMatcher.group(0))
+                }
+            }
+            srcMatcher.appendTail(htmlWithInjectedAssets)
+            html = htmlWithInjectedAssets.toString()
+        } catch (e: Exception) {}
+        
+        return html
+    }
+
+    private fun readFileRelativeTo(context: Context, parentPath: String, relativePath: String): String? {
+        return try {
+            if (parentPath.startsWith("content://")) {
+                null // SAF fallback
+            } else {
+                val file = File(parentPath, relativePath)
+                if (file.exists()) file.readText() else null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun readFileBytesRelativeTo(context: Context, parentPath: String, relativePath: String): ByteArray? {
+        return try {
+            if (parentPath.startsWith("content://")) {
+                null // SAF fallback
+            } else {
+                val file = File(parentPath, relativePath)
+                if (file.exists()) file.readBytes() else null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private val _isProcessing = MutableStateFlow(false)
     val isProcessing: StateFlow<Boolean> = _isProcessing.asStateFlow()
 
@@ -89,6 +205,9 @@ Ketik 'shh' untuk akses terminal.
     private val _backgroundImage = MutableStateFlow<Bitmap?>(null)
     val backgroundImage: StateFlow<Bitmap?> = _backgroundImage.asStateFlow()
 
+    private val _backgroundVideoUri = MutableStateFlow<Uri?>(null)
+    val backgroundVideoUri: StateFlow<Uri?> = _backgroundVideoUri.asStateFlow()
+
     init {
         viewModelScope.launch {
             // Observe settings flow from DB
@@ -99,6 +218,14 @@ Ketik 'shh' untuk akses terminal.
                 // Load background image if custom background is saved
                 map["bg_image_path"]?.let { path ->
                     loadBackgroundImage(path)
+                }
+                // Load background video if custom video is saved
+                map["bg_video_uri"]?.let { uriStr ->
+                    if (uriStr.isNotEmpty()) {
+                        _backgroundVideoUri.value = Uri.parse(uriStr)
+                    } else {
+                        _backgroundVideoUri.value = null
+                    }
                 }
             }
         }
@@ -125,9 +252,50 @@ Ketik 'shh' untuk akses terminal.
     val hasUnsavedChanges: StateFlow<Boolean> = _hasUnsavedChanges
 
     fun selectFile(file: CodeFile) {
+        if (!_openFiles.value.any { it.githubPath == file.githubPath }) {
+            _openFiles.value = _openFiles.value + file
+        }
         _selectedFile.value = file
         _hasUnsavedChanges.value = false
         _suggestions.value = emptyList()
+    }
+
+    fun closeFile(file: CodeFile) {
+        val currentOpen = _openFiles.value
+        val newOpen = currentOpen.filter { it.githubPath != file.githubPath }
+        _openFiles.value = newOpen
+        
+        if (_selectedFile.value?.githubPath == file.githubPath) {
+            _selectedFile.value = newOpen.lastOrNull()
+        }
+    }
+
+    fun uploadFile(context: Context, uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                _isProcessing.value = true
+                val docFile = DocumentFile.fromSingleUri(context, uri)
+                val fileName = docFile?.name ?: "uploaded_file"
+                
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                if (bytes != null) {
+                    val workspacePath = _settings.value["local_workspace_path"] ?: context.filesDir.absolutePath
+                    val targetFile = File(workspacePath, fileName)
+                    targetFile.writeBytes(bytes)
+                    
+                    withContext(Dispatchers.Main) {
+                        scanWorkspace(context)
+                        appendTerminalLog("[system] File '$fileName' berhasil diunggah.\n")
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    appendTerminalLog("[error] Gagal mengunggah file: ${e.message}\n")
+                }
+            } finally {
+                _isProcessing.value = false
+            }
+        }
     }
 
     // Workspace Folder & File operations (Direct-to-Disk)
@@ -721,6 +889,21 @@ Ketik 'shh' untuk akses terminal.
         return null
     }
 
+    private fun getFileContent(context: Context, fileNode: FileNode): String? {
+        return try {
+            if (fileNode.isSaf) {
+                val doc = DocumentFile.fromSingleUri(context, Uri.parse(fileNode.path))
+                context.contentResolver.openInputStream(doc!!.uri)?.use { stream ->
+                    stream.bufferedReader().use { it.readText() }
+                } ?: ""
+            } else {
+                java.io.File(fileNode.path).readText()
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     fun executeTerminalCommand(command: String, context: Context) {
         val trimmedCmd = command.trim()
         if (trimmedCmd.isEmpty()) return
@@ -747,42 +930,44 @@ Ketik 'shh' untuk akses terminal.
             return
         }
         
-        val parts = trimmedCmd.split(" ")
-        var interceptFileContent: String? = null
-        var interceptedFilename: String? = null
-        if (parts.size >= 2) {
-            val cmd = parts[0]
-            if (cmd == "python" || cmd == "python3" || cmd == "node" || cmd == "cat" || cmd == "bash" || cmd == "sh" || cmd == "ruby" || cmd == "php") {
+        val parts = trimmedCmd.split("\\s+".toRegex())
+        val interceptedFiles = mutableMapOf<String, String>()
+        
+        if (parts.isNotEmpty()) {
+            val cmd = parts[0].lowercase()
+            
+            // Intercept file based on command arguments (e.g. python main.py)
+            if (parts.size >= 2 && (cmd == "python" || cmd == "python3" || cmd == "node" || cmd == "cat" || cmd == "bash" || cmd == "sh" || cmd == "ruby" || cmd == "php")) {
                 val filename = parts[1]
-                val fileNode = findFileNodeByName(_workspaceFiles.value, filename)
-                if (fileNode != null && !fileNode.isDirectory) {
-                    try {
-                        interceptedFilename = filename
-                        interceptFileContent = if (fileNode.isSaf) {
-                            val doc = DocumentFile.fromSingleUri(context, Uri.parse(fileNode.path))
-                            context.contentResolver.openInputStream(doc!!.uri)?.use { stream ->
-                                stream.bufferedReader().use { it.readText() }
-                            } ?: ""
-                        } else {
-                            java.io.File(fileNode.path).readText()
-                        }
-                    } catch (e: Exception) {
-                        appendTerminalLog("[error] Gagal membaca file lokal $filename: ${e.message}\n")
+                findFileNodeByName(_workspaceFiles.value, filename)?.let { node ->
+                    if (!node.isDirectory) {
+                        getFileContent(context, node)?.let { interceptedFiles[filename] = it }
                     }
+                }
+            }
+            
+            // Special case: npm commands usually need package.json
+            if (cmd == "npm") {
+                findFileNodeByName(_workspaceFiles.value, "package.json")?.let { node ->
+                    getFileContent(context, node)?.let { interceptedFiles["package.json"] = it }
+                }
+                findFileNodeByName(_workspaceFiles.value, "package-lock.json")?.let { node ->
+                    getFileContent(context, node)?.let { interceptedFiles["package-lock.json"] = it }
                 }
             }
         }
         
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                if (interceptFileContent != null && interceptedFilename != null) {
-                    val base64Content = android.util.Base64.encodeToString(interceptFileContent!!.toByteArray(), android.util.Base64.NO_WRAP)
-                    val uploadCmd = "echo '$base64Content' | base64 -d > '$interceptedFilename'\n"
+                // Sync intercepted files to remote before executing command
+                interceptedFiles.forEach { (name, content) ->
+                    val base64Content = android.util.Base64.encodeToString(content.toByteArray(), android.util.Base64.NO_WRAP)
+                    val uploadCmd = "echo '$base64Content' | base64 -d > '$name'\n"
                     sshOutputStream?.write(uploadCmd.toByteArray())
                     sshOutputStream?.flush()
                     kotlinx.coroutines.delay(300)
                     withContext(Dispatchers.Main) {
-                        appendTerminalLog("[system] File lokal '$interceptedFilename' disinkronkan ke Files Explorer.\n")
+                        appendTerminalLog("[system] File lokal '$name' disinkronkan ke remote.\n")
                     }
                 }
 
@@ -978,6 +1163,39 @@ Ketik 'shh' untuk akses terminal.
             saveConfigSetting("bg_image_path", "")
             _backgroundImage.value = null
             appendTerminalLog("[editor] Background foto kustom dihapus.\n")
+        }
+    }
+
+    fun handleBackgroundVideoSelected(context: Context, uri: Uri) {
+        viewModelScope.launch {
+            try {
+                // Persistent permissions for SAF if needed, but here we'll just save the URI
+                // Note: For long term access to external URIs, we need takePersistableUriPermission
+                try {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (e: Exception) {}
+
+                saveConfigSetting("bg_video_uri", uri.toString())
+                _backgroundVideoUri.value = uri
+                
+                // Remove photo if video is set
+                removeCustomBackground()
+                
+                appendTerminalLog("[editor] Berhasil memperbarui background video kustom.\n")
+            } catch (e: Exception) {
+                appendTerminalLog("[error] Gagal memuat background video: ${e.message}\n")
+            }
+        }
+    }
+
+    fun removeCustomBackgroundVideo() {
+        viewModelScope.launch {
+            saveConfigSetting("bg_video_uri", "")
+            _backgroundVideoUri.value = null
+            appendTerminalLog("[editor] Background video kustom dihapus.\n")
         }
     }
 

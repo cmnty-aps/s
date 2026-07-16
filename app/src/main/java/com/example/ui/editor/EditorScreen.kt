@@ -18,6 +18,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -46,8 +47,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import com.example.data.model.CodeFile
 import com.example.data.model.Plugin
 import androidx.compose.ui.res.painterResource
@@ -69,13 +72,21 @@ fun EditorScreen(viewModel: EditorViewModel) {
     val workspacePath by viewModel.workspacePath.collectAsState()
     val workspaceFiles by viewModel.workspaceFiles.collectAsState()
     val selectedFile by viewModel.selectedFile.collectAsState()
+    val openFiles by viewModel.openFiles.collectAsState()
     val hasUnsavedChanges by viewModel.hasUnsavedChanges.collectAsState()
     val plugins by viewModel.plugins.collectAsState()
     val settings by viewModel.settings.collectAsState()
     val terminalOutput by viewModel.terminalOutput.collectAsState()
     val isProcessing by viewModel.isProcessing.collectAsState()
+
+    val fileUploadLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let { viewModel.uploadFile(context, it) }
+    }
     val suggestions by viewModel.suggestions.collectAsState()
     val backgroundImage by viewModel.backgroundImage.collectAsState()
+    val backgroundVideoUri by viewModel.backgroundVideoUri.collectAsState()
 
     // UI Interactive States
     var showRootNewFileDialog by remember { mutableStateOf(false) }
@@ -140,7 +151,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
     var showFileStatsDialog by remember { mutableStateOf(false) }
 
     // Theme values
-    val currentThemeName = settings["theme_name"] ?: "Monokai"
+    val currentThemeName = settings["theme_name"] ?: "VS Code Dark"
     val editorTheme = EditorTheme.fromName(currentThemeName)
     val fontSize = (settings["font_size"]?.toIntOrNull() ?: 14).sp
 
@@ -238,6 +249,15 @@ fun EditorScreen(viewModel: EditorViewModel) {
         }
     }
 
+    // Video picker launcher for custom backgrounds
+    val videoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        uri?.let {
+            viewModel.handleBackgroundVideoSelected(context, it)
+        }
+    }
+
     // Custom Workspace tree selection launcher
     val workspaceDirectoryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
@@ -298,9 +318,37 @@ fun EditorScreen(viewModel: EditorViewModel) {
         Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 4.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Navigation Icon
+                    IconButton(
+                        onClick = { isSidebarVisible = !isSidebarVisible },
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isSidebarVisible) Icons.Default.MenuOpen else Icons.Default.Menu,
+                            contentDescription = "Toggle Sidebar",
+                            tint = if (editorTheme.isDark) Color.White else Color.Black,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // Title
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         val logoResId = when {
                             selectedFile == null -> R.drawable.ic_cmnty_logo
                             selectedFile!!.name.endsWith(".html", ignoreCase = true) || selectedFile!!.name.endsWith(".htm", ignoreCase = true) -> R.drawable.ic_html_logo
@@ -316,7 +364,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                         }
                         Box(
                             modifier = Modifier
-                                .size(24.dp)
+                                .size(20.dp)
                                 .clip(androidx.compose.foundation.shape.CircleShape)
                                 .background(Color.White)
                                 .border(1.dp, Color.LightGray.copy(alpha = 0.3f), androidx.compose.foundation.shape.CircleShape),
@@ -325,7 +373,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                             Image(
                                 painter = painterResource(id = logoResId),
                                 contentDescription = null,
-                                modifier = Modifier.size(18.dp),
+                                modifier = Modifier.size(14.dp),
                                 contentScale = ContentScale.Crop
                             )
                         }
@@ -337,106 +385,133 @@ fun EditorScreen(viewModel: EditorViewModel) {
                         }
                         Text(
                             text = appTitle,
-                            fontSize = 16.sp,
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                             fontWeight = FontWeight.Bold,
                             color = if (hasUnsavedChanges) Color(0xFFFFC107) else (if (editorTheme.isDark) Color.White else Color.Black)
                         )
                     }
-                },
-                navigationIcon = {
-                    IconButton(onClick = { isSidebarVisible = !isSidebarVisible }) {
-                        Icon(
-                            imageVector = if (isSidebarVisible) Icons.Default.MenuOpen else Icons.Default.Menu,
-                            contentDescription = "Toggle Sidebar",
-                            tint = if (editorTheme.isDark) Color.White else Color.Black
-                        )
-                    }
-                },
-                actions = {
-                    if (isTablet) {
-                        if (selectedFile != null) {
-                            IconButton(onClick = { 
-                                viewModel.saveFile(context)
-                                Toast.makeText(context, "File berhasil disimpan", Toast.LENGTH_SHORT).show()
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Default.Save,
-                                    contentDescription = "Simpan File",
-                                    tint = if (hasUnsavedChanges) Color(0xFFFFC107) else (if (editorTheme.isDark) Color.White else Color.Black)
-                                )
+
+                    // Actions
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (isTablet) {
+                            if (selectedFile != null) {
+                                IconButton(onClick = { 
+                                    viewModel.saveFile(context)
+                                    Toast.makeText(context, "File berhasil disimpan", Toast.LENGTH_SHORT).show()
+                                }, modifier = Modifier.size(36.dp)) {
+                                    Icon(
+                                        imageVector = Icons.Default.Save,
+                                        contentDescription = "Simpan File",
+                                        tint = if (hasUnsavedChanges) Color(0xFFFFC107) else (if (editorTheme.isDark) Color.White else Color.Black),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             }
-                        }
-                        if (selectedFile != null && (selectedFile!!.language.lowercase() == "html" || selectedFile!!.language.lowercase() == "css")) {
-                            IconButton(onClick = { isLivePreviewActive = !isLivePreviewActive }) {
-                                Icon(
-                                    imageVector = if (isLivePreviewActive) Icons.Default.Phonelink else Icons.Default.Language,
-                                    contentDescription = "Toggle Web Preview",
-                                    tint = if (isLivePreviewActive) Color(0xFF00FFCC) else (if (editorTheme.isDark) Color.White else Color.Black)
-                                )
+                            if (selectedFile != null && (selectedFile!!.language.lowercase() == "html" || selectedFile!!.language.lowercase() == "css")) {
+                                IconButton(onClick = { isLivePreviewActive = !isLivePreviewActive }, modifier = Modifier.size(36.dp)) {
+                                    Icon(
+                                        imageVector = if (isLivePreviewActive) Icons.Default.Phonelink else Icons.Default.Language,
+                                        contentDescription = "Toggle Web Preview",
+                                        tint = if (isLivePreviewActive) Color(0xFF00FFCC) else (if (editorTheme.isDark) Color.White else Color.Black),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             }
-                        }
-                        if (selectedFile != null) {
-                            IconButton(onClick = { isSearchPanelActive = !isSearchPanelActive }) {
-                                Icon(
-                                    imageVector = Icons.Default.Search, 
-                                    contentDescription = "Cari & Ganti",
-                                    tint = if (isSearchPanelActive) Color(0xFF00FFCC) else (if (editorTheme.isDark) Color.White else Color.Black)
-                                )
+                            if (selectedFile != null) {
+                                IconButton(onClick = { isSearchPanelActive = !isSearchPanelActive }, modifier = Modifier.size(36.dp)) {
+                                    Icon(
+                                        imageVector = Icons.Default.Search, 
+                                        contentDescription = "Cari & Ganti",
+                                        tint = if (isSearchPanelActive) Color(0xFF00FFCC) else (if (editorTheme.isDark) Color.White else Color.Black),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                IconButton(onClick = { viewModel.formatActiveFile(context) }, modifier = Modifier.size(36.dp)) {
+                                    Icon(
+                                        imageVector = Icons.Default.FormatAlignLeft, 
+                                        contentDescription = "Format Code", 
+                                        tint = if (editorTheme.isDark) Color.White else Color.Black,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             }
-                            IconButton(onClick = { viewModel.formatActiveFile(context) }) {
-                                Icon(
-                                    imageVector = Icons.Default.FormatAlignLeft, 
-                                    contentDescription = "Format Code", 
-                                    tint = if (editorTheme.isDark) Color.White else Color.Black
-                                )
+                            IconButton(onClick = { showRootNewFileDialog = true }, modifier = Modifier.testTag("new_file_button").size(36.dp)) {
+                                Icon(Icons.Default.AddBox, contentDescription = "Buat File Baru", tint = if (editorTheme.isDark) Color.White else Color.Black, modifier = Modifier.size(18.dp))
                             }
-                        }
-                        IconButton(onClick = { showRootNewFileDialog = true }, modifier = Modifier.testTag("new_file_button")) {
-                            Icon(Icons.Default.AddBox, contentDescription = "Buat File Baru", tint = if (editorTheme.isDark) Color.White else Color.Black)
-                        }
-                        IconButton(onClick = { showGitHubSyncDialog = true }, modifier = Modifier.testTag("github_button")) {
-                            Icon(Icons.Default.CloudSync, contentDescription = "GitHub Sinkronisasi", tint = if (editorTheme.isDark) Color.White else Color.Black)
-                        }
-                        IconButton(onClick = { showSettingsDialog = true }, modifier = Modifier.testTag("settings_button")) {
-                            Icon(Icons.Default.Settings, contentDescription = "Pengaturan", tint = if (editorTheme.isDark) Color.White else Color.Black)
-                        }
-                    } else {
-                        if (selectedFile != null) {
-                            IconButton(onClick = { 
-                                viewModel.saveFile(context)
-                                Toast.makeText(context, "File berhasil disimpan", Toast.LENGTH_SHORT).show()
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Default.Save,
-                                    contentDescription = "Simpan File",
-                                    tint = if (hasUnsavedChanges) Color(0xFFFFC107) else (if (editorTheme.isDark) Color.White else Color.Black)
-                                )
-                            }
-                        }
-                        if (selectedFile != null && (selectedFile!!.language.lowercase() == "html" || selectedFile!!.language.lowercase() == "css")) {
-                            IconButton(onClick = { isLivePreviewActive = !isLivePreviewActive }) {
-                                Icon(
-                                    imageVector = if (isLivePreviewActive) Icons.Default.Phonelink else Icons.Default.Language,
-                                    contentDescription = "Toggle Web Preview",
-                                    tint = if (isLivePreviewActive) Color(0xFF00FFCC) else (if (editorTheme.isDark) Color.White else Color.Black)
-                                )
-                            }
-                        }
-                        Box {
-                            IconButton(onClick = { showOverflowMenu = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "Menu Lainnya", tint = if (editorTheme.isDark) Color.White else Color.Black)
-                            }
-                            DropdownMenu(
-                                expanded = showOverflowMenu,
-                                onDismissRequest = { showOverflowMenu = false }
-                            ) {
-                                if (selectedFile != null) {
+                            var showExpandedOverflowMenu by remember { mutableStateOf(false) }
+                            Box {
+                                IconButton(onClick = { showExpandedOverflowMenu = true }, modifier = Modifier.size(36.dp)) {
+                                    Icon(Icons.Default.MoreVert, contentDescription = "Menu Lainnya", tint = if (editorTheme.isDark) Color.White else Color.Black, modifier = Modifier.size(18.dp))
+                                }
+                                DropdownMenu(
+                                    expanded = showExpandedOverflowMenu,
+                                    onDismissRequest = { showExpandedOverflowMenu = false }
+                                ) {
                                     DropdownMenuItem(
-                                        text = { Text("Cari & Ganti") },
+                                        text = { Text("Unggah File") },
                                         onClick = {
-                                            showOverflowMenu = false
-                                            isSearchPanelActive = !isSearchPanelActive
+                                            showExpandedOverflowMenu = false
+                                            fileUploadLauncher.launch("*/*")
                                         },
+                                        leadingIcon = { Icon(Icons.Default.FileUpload, contentDescription = null) }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("GitHub Sinkronisasi") },
+                                        onClick = {
+                                            showExpandedOverflowMenu = false
+                                            showGitHubSyncDialog = true
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.CloudSync, contentDescription = null) }
+                                    )
+                                }
+                            }
+                            IconButton(onClick = { showGitHubSyncDialog = true }, modifier = Modifier.testTag("github_button").size(36.dp)) {
+                                Icon(Icons.Default.CloudSync, contentDescription = "GitHub Sinkronisasi", tint = if (editorTheme.isDark) Color.White else Color.Black, modifier = Modifier.size(18.dp))
+                            }
+                            IconButton(onClick = { showSettingsDialog = true }, modifier = Modifier.testTag("settings_button").size(36.dp)) {
+                                Icon(Icons.Default.Settings, contentDescription = "Pengaturan", tint = if (editorTheme.isDark) Color.White else Color.Black, modifier = Modifier.size(18.dp))
+                            }
+                        } else {
+                            if (selectedFile != null) {
+                                IconButton(onClick = { 
+                                    viewModel.saveFile(context)
+                                    Toast.makeText(context, "File berhasil disimpan", Toast.LENGTH_SHORT).show()
+                                }, modifier = Modifier.size(36.dp)) {
+                                    Icon(
+                                        imageVector = Icons.Default.Save,
+                                        contentDescription = "Simpan File",
+                                        tint = if (hasUnsavedChanges) Color(0xFFFFC107) else (if (editorTheme.isDark) Color.White else Color.Black),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                            if (selectedFile != null && (selectedFile!!.language.lowercase() == "html" || selectedFile!!.language.lowercase() == "css")) {
+                                IconButton(onClick = { isLivePreviewActive = !isLivePreviewActive }, modifier = Modifier.size(36.dp)) {
+                                    Icon(
+                                        imageVector = if (isLivePreviewActive) Icons.Default.Phonelink else Icons.Default.Language,
+                                        contentDescription = "Toggle Web Preview",
+                                        tint = if (isLivePreviewActive) Color(0xFF00FFCC) else (if (editorTheme.isDark) Color.White else Color.Black),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                            Box {
+                                IconButton(onClick = { showOverflowMenu = true }, modifier = Modifier.size(36.dp)) {
+                                    Icon(Icons.Default.MoreVert, contentDescription = "Menu Lainnya", tint = if (editorTheme.isDark) Color.White else Color.Black, modifier = Modifier.size(18.dp))
+                                }
+                                DropdownMenu(
+                                    expanded = showOverflowMenu,
+                                    onDismissRequest = { showOverflowMenu = false }
+                                ) {
+                                    if (selectedFile != null) {
+                                        DropdownMenuItem(
+                                            text = { Text("Cari & Ganti") },
+                                            onClick = {
+                                                showOverflowMenu = false
+                                                isSearchPanelActive = !isSearchPanelActive
+                                            },
                                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) }
                                     )
                                     DropdownMenuItem(
@@ -455,70 +530,64 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                             showFileStatsDialog = true
                                         },
                                         leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) }
-                                    )
-                                }
-                                DropdownMenuItem(
-                                    text = { Text("Buat File Baru") },
-                                    onClick = {
-                                        showOverflowMenu = false
-                                        showRootNewFileDialog = true
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.AddBox, contentDescription = null) }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("GitHub Sinkronisasi") },
-                                    onClick = {
-                                        showOverflowMenu = false
-                                        showGitHubSyncDialog = true
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.CloudSync, contentDescription = null) }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Ekspor ke ZIP") },
-                                    onClick = {
-                                        showOverflowMenu = false
-                                        viewModel.exportWorkspaceToZip(context) { uri ->
-                                            val intent = Intent(Intent.ACTION_SEND).apply {
-                                                type = "application/zip"
-                                                putExtra(Intent.EXTRA_STREAM, uri)
-                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                            }
-                                            context.startActivity(Intent.createChooser(intent, "Bagikan Workspace ZIP"))
-                                        }
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.Folder, contentDescription = null) }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Pengaturan") },
-                                    onClick = {
-                                        showOverflowMenu = false
-                                        showSettingsDialog = true
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) }
                                 )
                             }
+                            DropdownMenuItem(
+                                text = { Text("Unggah File") },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    fileUploadLauncher.launch("*/*")
+                                },
+                                leadingIcon = { Icon(Icons.Default.FileUpload, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Buat File Baru") },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    showRootNewFileDialog = true
+                                },
+                                leadingIcon = { Icon(Icons.Default.AddBox, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("GitHub Sinkronisasi") },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    showGitHubSyncDialog = true
+                                },
+                                leadingIcon = { Icon(Icons.Default.CloudSync, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Ekspor ke ZIP") },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    viewModel.exportWorkspaceToZip(context) { uri ->
+                                        val intent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "application/zip"
+                                            putExtra(Intent.EXTRA_STREAM, uri)
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        context.startActivity(Intent.createChooser(intent, "Bagikan Workspace ZIP"))
+                                    }
+                                },
+                                leadingIcon = { Icon(Icons.Default.Folder, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Pengaturan") },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    showSettingsDialog = true
+                                },
+                                leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) }
+                            )
                         }
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = editorTheme.background.copy(alpha = 0.92f)
-                )
-            )
-        },
-        bottomBar = {
-            Column(modifier = Modifier.imePadding()) {
-                if (selectedFile != null) {
-                    DeveloperKeyboardAccessoryBar(
-                        editorTheme = editorTheme,
-                        onInsertSymbol = { symbol -> insertTextAtCursor(symbol) },
-                        onUndo = { handleUndo() },
-                        onRedo = { handleRedo() },
-                        canUndo = undoStack.isNotEmpty(),
-                        canRedo = redoStack.isNotEmpty(),
-                        onMoveCursorLeft = { moveCursor(-1) },
-                        onMoveCursorRight = { moveCursor(1) }
-                    )
                 }
+            }
+        }
+    }
+},
+    bottomBar = {
+            Column(modifier = Modifier.imePadding()) {
                 // Autocomplete suggestion bar
                 AnimatedVisibility(
                     visible = suggestions.isNotEmpty(),
@@ -528,7 +597,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(editorTheme.background.copy(alpha = 0.95f))
+                            .background(editorTheme.background.copy(alpha = 0.7f))
                             .border(1.dp, Color.Gray.copy(alpha = 0.2f))
                             .horizontalScroll(rememberScrollState())
                             .padding(8.dp),
@@ -572,31 +641,37 @@ fun EditorScreen(viewModel: EditorViewModel) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .padding(horizontal = 8.dp, vertical = 0.dp)
                         .navigationBarsPadding(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { isTerminalExpanded = !isTerminalExpanded }
+                        modifier = Modifier
+                            .clickable { isTerminalExpanded = !isTerminalExpanded }
+                            .padding(vertical = 2.dp)
                     ) {
                         Icon(
                             if (isTerminalExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.Terminal,
                             contentDescription = "Toggle Terminal",
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(14.dp)
                         )
-                        Spacer(Modifier.width(8.dp))
+                        Spacer(Modifier.width(6.dp))
                         Text(
                             text = "Terminal",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
-                    IconButton(onClick = { isTerminalExpanded = !isTerminalExpanded }) {
+                    IconButton(
+                        onClick = { isTerminalExpanded = !isTerminalExpanded },
+                        modifier = Modifier.size(20.dp)
+                    ) {
                         Icon(
                             imageVector = if (isTerminalExpanded) Icons.Default.ExpandMore else Icons.Default.ExpandLess,
-                            contentDescription = "Expand"
+                            contentDescription = "Expand",
+                            modifier = Modifier.size(14.dp)
                         )
                     }
                 }
@@ -616,11 +691,34 @@ fun EditorScreen(viewModel: EditorViewModel) {
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
-                // Ambient dark code editor overlay
+            } else if (backgroundVideoUri != null) {
+                AndroidView(
+                    factory = { ctx ->
+                        android.widget.VideoView(ctx).apply {
+                            setVideoURI(backgroundVideoUri)
+                            setOnPreparedListener { mp ->
+                                mp.isLooping = true
+                                mp.setVolume(0f, 0f)
+                                start()
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                    update = { view ->
+                        if (view.tag != backgroundVideoUri) {
+                            view.setVideoURI(backgroundVideoUri)
+                            view.tag = backgroundVideoUri
+                        }
+                    }
+                )
+            }
+
+            // Dark tint for background readability
+            if (backgroundImage != null || backgroundVideoUri != null) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.7f))
+                        .background(Color.Black.copy(alpha = 0.4f))
                 )
             }
 
@@ -642,7 +740,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                     showRootNewFileDialog = { showRootNewFileDialog = true },
                                     onRefresh = { viewModel.scanWorkspace(context) },
                                     fileSearchQuery = fileSearchQuery,
-                                    onFileSearchQueryChange = { fileSearchQuery = it },
+                                    onFileSearchQueryChange = { query -> fileSearchQuery = query },
                                     workspaceFiles = workspaceFiles,
                                     selectedFile = selectedFile,
                                     onSelectNode = { node ->
@@ -662,13 +760,14 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                     },
                                     onDuplicateItem = { node ->
                                         viewModel.duplicateFile(context, node)
-                                    }
+                                    },
+                                    onUploadFile = { fileUploadLauncher.launch("*/*") }
                                 )
                             }
                         }
                         
                         if (isSidebarVisible) {
-                            Spacer(Modifier.width(8.dp))
+                            // No spacer for flush look
                         }
                     }
 
@@ -677,7 +776,6 @@ fun EditorScreen(viewModel: EditorViewModel) {
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .padding(end = 8.dp, top = 8.dp, bottom = 8.dp)
                 ) {
                     // Editor Panel Container
                     if (!(isCompact && isLivePreviewActive)) {
@@ -685,11 +783,59 @@ fun EditorScreen(viewModel: EditorViewModel) {
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxHeight(),
-                        colors = CardDefaults.cardColors(containerColor = editorTheme.background.copy(alpha = 0.85f)),
-                        border = BorderStroke(1.dp, Color.Gray.copy(alpha = 0.25f)),
-                        shape = RoundedCornerShape(12.dp)
+                        colors = CardDefaults.cardColors(containerColor = editorTheme.background.copy(alpha = 0.6f)),
+                        shape = androidx.compose.ui.graphics.RectangleShape
                     ) {
                         Column(modifier = Modifier.fillMaxSize()) {
+                            // Editor Tab Bar
+                            if (openFiles.isNotEmpty()) {
+                                ScrollableTabRow(
+                                    selectedTabIndex = openFiles.indexOfFirst { it.githubPath == selectedFile?.githubPath }.coerceAtLeast(0),
+                                    containerColor = Color.Black.copy(alpha = 0.3f),
+                                    contentColor = Color.White,
+                                    edgePadding = 0.dp,
+                                    divider = {},
+                                    indicator = { tabPositions ->
+                                        TabRowDefaults.SecondaryIndicator(
+                                            modifier = Modifier.tabIndicatorOffset(tabPositions[openFiles.indexOfFirst { it.githubPath == selectedFile?.githubPath }.coerceAtLeast(0)]),
+                                            color = Color(0xFF38bdf8)
+                                        )
+                                    }
+                                ) {
+                                    openFiles.forEach { file ->
+                                        Tab(
+                                            selected = selectedFile?.githubPath == file.githubPath,
+                                            onClick = { viewModel.selectFile(file) },
+                                            modifier = Modifier.height(40.dp)
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.padding(horizontal = 12.dp)
+                                            ) {
+                                                Text(
+                                                    text = file.name,
+                                                    fontSize = 11.sp,
+                                                    maxLines = 1,
+                                                    color = if (selectedFile?.githubPath == file.githubPath) Color.White else Color.Gray
+                                                )
+                                                Spacer(Modifier.width(8.dp))
+                                                IconButton(
+                                                    onClick = { viewModel.closeFile(file) },
+                                                    modifier = Modifier.size(16.dp)
+                                                ) {
+                                                    Icon(
+                                                        Icons.Default.Close,
+                                                        contentDescription = "Close",
+                                                        tint = Color.Gray,
+                                                        modifier = Modifier.size(12.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
                             val sharedVerticalScrollState = rememberScrollState()
                             // Search and Replace Panel (Sliding overlay)
                             AnimatedVisibility(
@@ -757,7 +903,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                                         }
                                                     },
                                                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
-                                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00FFCC), contentColor = Color.Black)
+                                                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)
                                                 ) {
                                                     Text("Cari", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                                 }
@@ -834,11 +980,12 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                         )
                                         Spacer(Modifier.height(24.dp))
                                         Button(
-                                            onClick = { workspaceDirectoryLauncher.launch(null) }
+                                            onClick = { workspaceDirectoryLauncher.launch(null) },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)
                                         ) {
                                             Icon(Icons.Default.FolderOpen, contentDescription = null)
                                             Spacer(Modifier.width(6.dp))
-                                            Text("Import Folder")
+                                            Text("Import Folder", color = Color.Black)
                                         }
                                     }
                                 }
@@ -914,140 +1061,81 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                         )
                                     }
 
-                                    // Embedded Code Minimap (Advanced Visualization Component)
-                                    if (isMinimapEnabled) {
-                                        Box(
-                                            modifier = Modifier
-                                                .width(44.dp)
-                                                .fillMaxHeight()
-                                                .background(Color.Black.copy(alpha = 0.1f))
-                                                .padding(vertical = 12.dp)
-                                                .drawBehind {
-                                                    val textLines = editorTextFieldValue.text.lines()
-                                                    val maxLinesToDraw = minOf(textLines.size, 160)
-                                                    val barHeight = 2.5f
-                                                    val spacing = 2f
-                                                    
-                                                    for (i in 0 until maxLinesToDraw) {
-                                                        val lineText = textLines[i].trim()
-                                                        if (lineText.isNotEmpty()) {
-                                                            val lineLength = minOf(lineText.length, 30)
-                                                            val indent = textLines[i].length - lineText.length
-                                                            
-                                                            val barColor = when {
-                                                                lineText.contains("function") || lineText.contains("def") || lineText.contains("fun") -> Color(0xFF00FFCC)
-                                                                lineText.contains("const") || lineText.contains("let") || lineText.contains("val") -> Color(0xFFFFCC00)
-                                                                lineText.contains("import") || lineText.contains("class") -> Color(0xFFF72585)
-                                                                else -> Color.Gray.copy(alpha = 0.4f)
-                                                            }
-                                                            
-                                                            drawRect(
-                                                                color = barColor,
-                                                                topLeft = androidx.compose.ui.geometry.Offset(
-                                                                    x = (indent * 0.9f).coerceIn(0f, 15f),
-                                                                    y = i * (barHeight + spacing)
-                                                                ),
-                                                                size = androidx.compose.ui.geometry.Size(
-                                                                    width = (lineLength * 0.9f).coerceAtLeast(3f),
-                                                                    height = barHeight
-                                                                )
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                        )
-                                    }
+                                    // (Minimap removed)
                                 }
 
-                                // Bottom Status Info Bar
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(Color.Black.copy(alpha = 0.25f))
-                                        .padding(horizontal = 12.dp, vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    val wordCount = editorTextFieldValue.text.split("\\s+".toRegex()).filter { it.isNotEmpty() }.size
-                                    val charCount = editorTextFieldValue.text.length
-                                    
-                                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                        Text("Baris: ${editorTextFieldValue.text.lines().size}", fontSize = 10.sp, color = Color.Gray)
-                                        Text("Kata: $wordCount", fontSize = 10.sp, color = Color.Gray)
-                                        Text("Karakter: $charCount", fontSize = 10.sp, color = Color.Gray)
-                                    }
-
-                                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                        Text("Tema: $currentThemeName", fontSize = 10.sp, color = Color.Gray)
-                                        Text("Sintaks: ${selectedFile?.language ?: "Plain"}", fontSize = 10.sp, color = editorTheme.keywordColor)
-                                    }
-                                }
+                                // Bottom Status Info Bar (Stats removed as requested)
+                                Spacer(Modifier.height(4.dp))
                             }
                         }
                     }
-                    }
+                }
 
-                    // Optional Live Split HTML preview
-                    if (selectedFile != null && isLivePreviewActive && (selectedFile!!.language.lowercase() == "html" || selectedFile!!.language.lowercase() == "css")) {
-                        Spacer(Modifier.width(8.dp))
-                        Card(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight(),
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
-                            border = BorderStroke(1.dp, Color.Gray.copy(alpha = 0.3f)),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Column(modifier = Modifier.fillMaxSize()) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(Color(0xFFEFEFEF))
-                                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                // Optional Live Split HTML preview
+                if (selectedFile != null && isLivePreviewActive && (selectedFile!!.language.lowercase() == "html" || selectedFile!!.language.lowercase() == "css")) {
+                    Spacer(Modifier.width(8.dp))
+                    Card(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        border = BorderStroke(1.dp, Color.Gray.copy(alpha = 0.3f)),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFFEFEFEF))
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Language, contentDescription = null, tint = Color.DarkGray, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("PREVIEW BROWSER AKTIF", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.DarkGray)
+                                }
+                                IconButton(
+                                    onClick = { isLivePreviewActive = false },
+                                    modifier = Modifier.size(24.dp)
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Language, contentDescription = null, tint = Color.DarkGray, modifier = Modifier.size(16.dp))
-                                        Spacer(Modifier.width(6.dp))
-                                        Text("PREVIEW BROWSER AKTIF", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.DarkGray)
-                                    }
-                                    IconButton(
-                                        onClick = { isLivePreviewActive = false },
-                                        modifier = Modifier.size(24.dp)
-                                    ) {
-                                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.DarkGray, modifier = Modifier.size(16.dp))
-                                    }
+                                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.DarkGray, modifier = Modifier.size(16.dp))
                                 }
-                                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                                    AndroidView(
-                                        factory = { ctx ->
-                                            WebView(ctx).apply {
-                                                getSettings().javaScriptEnabled = true
-                                                getSettings().cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
-                                                getSettings().databaseEnabled = false
-                                                getSettings().domStorageEnabled = true
-                                                webViewClient = WebViewClient()
-                                            }
-                                        },
-                                        update = { webView ->
-                                            webView.loadDataWithBaseURL(
-                                                "file:///",
-                                                selectedFile?.content ?: "",
-                                                "text/html",
-                                                "UTF-8",
-                                                null
-                                            )
-                                        },
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-                                }
+                            }
+                            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                                AndroidView(
+                                    factory = { ctx ->
+                                        WebView(ctx).apply {
+                                            getSettings().javaScriptEnabled = true
+                                            getSettings().cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
+                                            getSettings().databaseEnabled = false
+                                            getSettings().domStorageEnabled = true
+                                            webViewClient = WebViewClient()
+                                        }
+                                    },
+                                     update = { webView ->
+                                         val bundledHtml = if (selectedFile != null && selectedFile!!.language.lowercase() == "html") {
+                                             viewModel.getBundledHtml(context, selectedFile!!)
+                                         } else {
+                                             selectedFile?.content ?: ""
+                                         }
+                                         webView.loadDataWithBaseURL(
+                                             "file:///",
+                                             bundledHtml,
+                                             "text/html",
+                                             "UTF-8",
+                                             null
+                                         )
+                                     },
+                                    modifier = Modifier.fillMaxSize()
+                                )
                             }
                         }
                     }
                 }
             }
-            }
+        }
 
             // Expanding integrated virtual terminal console
             AnimatedVisibility(
@@ -1057,10 +1145,9 @@ fun EditorScreen(viewModel: EditorViewModel) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(280.dp),
-                    shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0C0C0F)),
-                    border = BorderStroke(1.dp, Color.Gray.copy(alpha = 0.3f))
+                        .height(180.dp),
+                    shape = androidx.compose.ui.graphics.RectangleShape,
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0C0C0F))
                 ) {
                     Column(modifier = Modifier.fillMaxSize()) {
                         Row(
@@ -1153,7 +1240,8 @@ fun EditorScreen(viewModel: EditorViewModel) {
         AnimatedVisibility(
             visible = isSidebarVisible,
             enter = slideInHorizontally { -it } + fadeIn(),
-            exit = slideOutHorizontally { -it } + fadeOut()
+            exit = slideOutHorizontally { -it } + fadeOut(),
+            modifier = Modifier.zIndex(10f)
         ) {
             // Dimmed background overlay
             Box(
@@ -1176,7 +1264,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                         showRootNewFileDialog = { showRootNewFileDialog = true },
                         onRefresh = { viewModel.scanWorkspace(context) },
                         fileSearchQuery = fileSearchQuery,
-                        onFileSearchQueryChange = { fileSearchQuery = it },
+                        onFileSearchQueryChange = { query -> fileSearchQuery = query },
                         workspaceFiles = workspaceFiles,
                         selectedFile = selectedFile,
                         onSelectNode = { node ->
@@ -1197,13 +1285,13 @@ fun EditorScreen(viewModel: EditorViewModel) {
                         },
                         onDuplicateItem = { node ->
                             viewModel.duplicateFile(context, node)
-                        }
+                        },
+                        onUploadFile = { fileUploadLauncher.launch("*/*") }
                     )
                 }
             }
         }
     }
-}
 
     // --- POPUP DIALOGS ---
 
@@ -1211,8 +1299,6 @@ fun EditorScreen(viewModel: EditorViewModel) {
     if (showRootNewFileDialog) {
         var fileName by remember { mutableStateOf("") }
         var isFolder by remember { mutableStateOf(false) }
-        var selectedLang by remember { mutableStateOf("Python") }
-        val languages = listOf("Python", "JavaScript", "HTML", "CSS", "Kotlin")
 
         Dialog(onDismissRequest = { showRootNewFileDialog = false }) {
             Card(
@@ -1229,17 +1315,25 @@ fun EditorScreen(viewModel: EditorViewModel) {
                     ) {
                         Button(
                             onClick = { isFolder = false },
-                            colors = ButtonDefaults.buttonColors(containerColor = if (!isFolder) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (!isFolder) Color.White else Color.Black,
+                                contentColor = if (!isFolder) Color.Black else Color.White
+                            ),
+                            border = if (isFolder) BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)) else null,
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("File Baru", color = if (!isFolder) Color.White else Color.Black)
+                            Text("File Baru", color = if (!isFolder) Color.Black else Color.White)
                         }
                         Button(
                             onClick = { isFolder = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isFolder) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isFolder) Color.White else Color.Black,
+                                contentColor = if (isFolder) Color.Black else Color.White
+                            ),
+                            border = if (!isFolder) BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)) else null,
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("Folder Baru", color = if (isFolder) Color.White else Color.Black)
+                            Text("Folder Baru", color = if (isFolder) Color.Black else Color.White)
                         }
                     }
 
@@ -1251,28 +1345,6 @@ fun EditorScreen(viewModel: EditorViewModel) {
                         label = { Text(if (isFolder) "Nama Folder (e.g. src)" else "Nama File (e.g. main.py)") },
                         modifier = Modifier.fillMaxWidth().testTag("new_file_name_input")
                     )
-
-                    if (!isFolder) {
-                        Spacer(Modifier.height(12.dp))
-                        Text("Pilih Template Bahasa:", fontSize = 12.sp, color = Color.Gray)
-                        Row(
-                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            languages.forEach { lang ->
-                                val isSelected = selectedLang == lang
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
-                                        .clickable { selectedLang = lang }
-                                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                                ) {
-                                    Text(lang, color = if (isSelected) Color.White else Color.Black)
-                                }
-                            }
-                        }
-                    }
 
                     Spacer(Modifier.height(24.dp))
                     Row(
@@ -1286,16 +1358,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                         Button(
                             onClick = {
                                 if (fileName.trim().isNotEmpty()) {
-                                    val defaultCode = if (isFolder) "" else {
-                                        when (selectedLang.lowercase()) {
-                                            "python" -> "print(\"Halo Dunia dari Python!\")\n"
-                                            "javascript" -> "console.log(\"Halo Dunia dari JS/Node!\");\n"
-                                            "html" -> "<!DOCTYPE html>\n<html>\n<body>\n  <h1>Halo Dunia</h1>\n</body>\n</html>"
-                                            "css" -> "body {\n  color: #00ffcc;\n  background-color: #0c0c14;\n}"
-                                            else -> "// Tulis kodemu di sini\n"
-                                        }
-                                    }
-                                    viewModel.createNewFileInWorkspace(context, null, fileName.trim(), isFolder, defaultCode)
+                                    viewModel.createNewFileInWorkspace(context, null, fileName.trim(), isFolder, "")
                                     showRootNewFileDialog = false
                                 } else {
                                     Toast.makeText(context, "Nama tidak boleh kosong", Toast.LENGTH_SHORT).show()
@@ -1402,7 +1465,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
 
     // 2. Settings Dialog
     if (showSettingsDialog) {
-        val themes = listOf("Monokai", "VS Code Dark", "Retro Terminal", "Nord", "Dracula", "One Dark", "Solarized Dark")
+        val themes = listOf("VS Code Dark", "Nord", "Dracula", "One Dark", "Solarized Dark")
         val githubToken = settings["github_token"] ?: ""
         val githubOwner = settings["github_owner"] ?: ""
         val githubRepo = settings["github_repo"] ?: ""
@@ -1438,65 +1501,41 @@ fun EditorScreen(viewModel: EditorViewModel) {
 
                     Text("Pilih Tema Editor:", fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = PaddingValues(bottom = 8.dp)
                     ) {
-                        themes.forEach { theme ->
+                        items(themes) { theme ->
                             val isSelected = currentThemeName == theme
                             val themeIcon = when (theme) {
-                                "Monokai" -> Icons.Default.Palette
                                 "VS Code Dark" -> Icons.Default.Code
-                                "Retro Terminal" -> Icons.Default.Terminal
                                 "Nord" -> Icons.Default.AcUnit
                                 "Dracula" -> Icons.Default.AutoAwesome
                                 "One Dark" -> Icons.Default.Architecture
                                 "Solarized Dark" -> Icons.Default.WbSunny
                                 else -> Icons.Default.Style
                             }
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier
-                                    .width(80.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(if (isSelected) Color(0xFF00FFCC).copy(alpha = 0.2f) else Color.Transparent)
-                                    .border(
-                                        width = if (isSelected) 2.dp else 1.dp,
-                                        color = if (isSelected) Color(0xFF00FFCC) else Color.Gray.copy(alpha = 0.3f),
-                                        shape = RoundedCornerShape(12.dp)
-                                    )
-                                    .clickable { viewModel.saveConfigSetting("theme_name", theme) }
-                                    .padding(12.dp)
+                            Button(
+                                onClick = { viewModel.saveConfigSetting("theme_name", theme) },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isSelected) Color.White else Color.Black,
+                                    contentColor = if (isSelected) Color.Black else Color.White
+                                ),
+                                border = if (!isSelected) BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)) else null,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.height(36.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp)
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(if (isSelected) Color(0xFF00FFCC) else Color.Gray.copy(alpha = 0.1f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = themeIcon,
-                                        contentDescription = null,
-                                        tint = if (isSelected) Color.Black else (if (editorTheme.isDark) Color.White else Color.Black),
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                                Spacer(Modifier.height(8.dp))
-                                Text(
-                                    text = theme,
-                                    color = if (editorTheme.isDark) Color.White else Color.Black,
-                                    fontSize = 11.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                    maxLines = 1
-                                )
+                                Icon(themeIcon, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(theme, fontSize = 12.sp, color = if (isSelected) Color.Black else Color.White)
                             }
                         }
                     }
 
                     Spacer(Modifier.height(16.dp))
-                    Text("Background Foto:", fontSize = 12.sp, color = Color.Gray)
+                    Text("Background Media (Foto/Video):", fontSize = 12.sp, color = Color.Gray)
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Button(
@@ -1504,20 +1543,44 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                 photoPickerLauncher.launch(
                                     PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                 )
-                            }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f).height(36.dp),
+                            contentPadding = PaddingValues(0.dp)
                         ) {
                             Icon(Icons.Default.Upload, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("Upload Foto", fontSize = 12.sp)
+                            Text("Foto", fontSize = 12.sp, color = Color.Black)
                         }
-                        if (backgroundImage != null) {
+                        Button(
+                            onClick = {
+                                videoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                                )
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f).height(36.dp),
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Icon(Icons.Default.Movie, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Video", fontSize = 12.sp, color = Color.White)
+                        }
+                        if (backgroundImage != null || backgroundVideoUri != null) {
                             Button(
-                                onClick = { viewModel.removeCustomBackground() },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                                onClick = { 
+                                    viewModel.removeCustomBackground()
+                                    viewModel.removeCustomBackgroundVideo()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.Red, contentColor = Color.White),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.weight(0.5f).height(36.dp),
+                                contentPadding = PaddingValues(0.dp)
                             ) {
                                 Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("Hapus", fontSize = 12.sp, color = Color.White)
                             }
                         }
                     }
@@ -1570,18 +1633,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                         )
                     }
                     
-                    Spacer(Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Tampilkan Minimap Code", fontSize = 13.sp)
-                        Switch(
-                            checked = isMinimapEnabled,
-                            onCheckedChange = { isMinimapEnabled = it }
-                        )
-                    }
+                    // (Minimap toggle removed)
                     
                     Spacer(Modifier.height(8.dp))
                     Row(
@@ -1662,9 +1714,11 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                 viewModel.saveConfigSetting("ssh_pass", sshPassInput)
                                 showSettingsDialog = false
                                 Toast.makeText(context, "Pengaturan disimpan!", Toast.LENGTH_SHORT).show()
-                            }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
+                            shape = RoundedCornerShape(8.dp)
                         ) {
-                            Text("Simpan")
+                            Text("Simpan", color = Color.Black)
                         }
                     }
                 }
@@ -1709,12 +1763,13 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                 )
                                 showGitHubSyncDialog = false
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
                             Spacer(Modifier.width(4.dp))
-                            Text("Pull (Unduh)", fontSize = 12.sp)
+                            Text("Pull (Unduh)", fontSize = 12.sp, color = Color.White)
                         }
 
                         Button(
@@ -1726,11 +1781,12 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                 )
                                 showGitHubSyncDialog = false
                             },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.Black)
                             Spacer(Modifier.width(4.dp))
-                            Text("Push (Kirim)", fontSize = 12.sp)
+                            Text("Push (Kirim)", fontSize = 12.sp, color = Color.Black)
                         }
                     }
                 }
@@ -1738,481 +1794,6 @@ fun EditorScreen(viewModel: EditorViewModel) {
         }
     }
 
-
-}
-
-@Composable
-fun FileExplorerItem(
-    node: FileNode,
-    isSelected: Boolean,
-    onSelect: () -> Unit,
-    onToggleExpand: () -> Unit,
-    onCreateItem: (parentPath: String?, name: String, isFolder: Boolean, defaultContent: String) -> Unit,
-    onDeleteItem: () -> Unit,
-    onRenameItem: (newName: String) -> Unit,
-    onDuplicateItem: () -> Unit,
-    editorTheme: EditorTheme
-) {
-    var showMenu by remember { mutableStateOf(false) }
-    var showCreateDialog by remember { mutableStateOf(false) }
-    var createIsFolder by remember { mutableStateOf(false) }
-    var newItemName by remember { mutableStateOf("") }
-    
-    var showRenameDialog by remember { mutableStateOf(false) }
-    var renameNewName by remember { mutableStateOf(node.name) }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(if (isSelected) editorTheme.keywordColor.copy(alpha = 0.15f) else Color.Transparent)
-            .clickable {
-                if (node.isDirectory) {
-                    onToggleExpand()
-                } else {
-                    onSelect()
-                }
-            }
-            .padding(start = (12 * node.level).dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        if (node.isDirectory) {
-            Icon(
-                imageVector = if (node.isExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
-                contentDescription = null,
-                tint = editorTheme.foreground.copy(alpha = 0.6f),
-                modifier = Modifier.size(16.dp)
-            )
-        } else {
-            Spacer(modifier = Modifier.width(16.dp))
-        }
-
-        Spacer(modifier = Modifier.width(4.dp))
-
-        if (node.isDirectory) {
-            Icon(
-                imageVector = if (node.isExpanded) Icons.Default.FolderOpen else Icons.Default.Folder,
-                contentDescription = null,
-                tint = Color(0xFFFFCA28),
-                modifier = Modifier.size(20.dp)
-            )
-        } else {
-            val logoResId = when {
-                node.name.endsWith(".html", ignoreCase = true) || node.name.endsWith(".htm", ignoreCase = true) -> R.drawable.ic_html_logo
-                node.name.endsWith(".css", ignoreCase = true) -> R.drawable.ic_css_logo
-                node.name.endsWith(".js", ignoreCase = true) -> R.drawable.ic_js_logo
-                node.name.endsWith(".py", ignoreCase = true) -> R.drawable.ic_python_logo
-                node.name.endsWith(".php", ignoreCase = true) -> R.drawable.ic_php_logo
-                node.name.endsWith(".json", ignoreCase = true) -> R.drawable.ic_json_logo
-                node.name.endsWith(".java", ignoreCase = true) -> R.drawable.ic_java_logo
-                node.name.endsWith(".kt", ignoreCase = true) -> R.drawable.ic_kotlin_logo
-                node.name.endsWith(".md", ignoreCase = true) -> R.drawable.ic_markdown_logo
-                else -> R.drawable.ic_generic_file_logo
-            }
-            Box(
-                modifier = Modifier
-                    .size(22.dp)
-                    .clip(androidx.compose.foundation.shape.CircleShape)
-                    .background(Color.White)
-                    .border(1.dp, Color.LightGray.copy(alpha = 0.5f), androidx.compose.foundation.shape.CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Image(
-                    painter = painterResource(id = logoResId),
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    contentScale = ContentScale.Crop
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.width(8.dp))
-
-        Text(
-            text = node.name,
-            fontSize = 13.sp,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-            color = if (isSelected) editorTheme.keywordColor else editorTheme.foreground,
-            maxLines = 1,
-            modifier = Modifier.weight(1f)
-        )
-
-        Box {
-            IconButton(
-                onClick = { showMenu = true },
-                modifier = Modifier.size(24.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.MoreVert,
-                    contentDescription = "Actions",
-                    tint = editorTheme.foreground.copy(alpha = 0.5f),
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-
-            DropdownMenu(
-                expanded = showMenu,
-                onDismissRequest = { showMenu = false }
-            ) {
-                if (node.isDirectory) {
-                    DropdownMenuItem(
-                        text = { Text("Buat File Baru") },
-                        onClick = {
-                            showMenu = false
-                            createIsFolder = false
-                            newItemName = ""
-                            showCreateDialog = true
-                        },
-                        leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp)) }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Buat Folder Baru") },
-                        onClick = {
-                            showMenu = false
-                            createIsFolder = true
-                            newItemName = ""
-                            showCreateDialog = true
-                        },
-                        leadingIcon = { Icon(Icons.Default.CreateNewFolder, contentDescription = null, modifier = Modifier.size(18.dp)) }
-                    )
-                } else {
-                    DropdownMenuItem(
-                        text = { Text("Duplikat File") },
-                        onClick = {
-                            showMenu = false
-                            onDuplicateItem()
-                        },
-                        leadingIcon = { Icon(Icons.Default.FileCopy, contentDescription = null, modifier = Modifier.size(18.dp)) }
-                    )
-                }
-                DropdownMenuItem(
-                    text = { Text("Ubah Nama") },
-                    onClick = {
-                        showMenu = false
-                        renameNewName = node.name
-                        showRenameDialog = true
-                    },
-                    leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp)) }
-                )
-                DropdownMenuItem(
-                    text = { Text("Hapus") },
-                    onClick = {
-                        showMenu = false
-                        onDeleteItem()
-                    },
-                    leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.Red) }
-                )
-            }
-        }
-    }
-
-    if (showCreateDialog) {
-        AlertDialog(
-            onDismissRequest = { showCreateDialog = false },
-            title = { Text(if (createIsFolder) "Buat Folder Baru" else "Buat File Baru") },
-            text = {
-                Column {
-                    Text("Buat di: ${node.name}", fontSize = 12.sp, color = Color.Gray)
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = newItemName,
-                        onValueChange = { newItemName = it },
-                        label = { Text("Nama") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (newItemName.trim().isNotEmpty()) {
-                            val defaultCode = when (newItemName.substringAfterLast(".", "").lowercase()) {
-                                "py" -> "print(\"Halo Dunia dari Python!\")\n"
-                                "js" -> "console.log(\"Halo Dunia dari JS!\");\n"
-                                "html" -> "<!DOCTYPE html>\n<html>\n<body>\n  <h1>Halo Dunia</h1>\n</body>\n</html>"
-                                "css" -> "body {\n  color: #00ffcc;\n  background: #0c0c14;\n}"
-                                else -> ""
-                            }
-                            onCreateItem(node.path, newItemName.trim(), createIsFolder, defaultCode)
-                            showCreateDialog = false
-                        }
-                    }
-                ) {
-                    Text("Buat")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCreateDialog = false }) {
-                    Text("Batal")
-                }
-            }
-        )
-    }
-
-    if (showRenameDialog) {
-        AlertDialog(
-            onDismissRequest = { showRenameDialog = false },
-            title = { Text("Ubah Nama") },
-            text = {
-                OutlinedTextField(
-                    value = renameNewName,
-                    onValueChange = { renameNewName = it },
-                    label = { Text("Nama Baru") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (renameNewName.trim().isNotEmpty() && renameNewName != node.name) {
-                            onRenameItem(renameNewName.trim())
-                            showRenameDialog = false
-                        }
-                    }
-                ) {
-                    Text("Simpan")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showRenameDialog = false }) {
-                    Text("Batal")
-                }
-            }
-        )
-    }
-}
-
-fun getFlattenedTree(nodes: List<FileNode>): List<FileNode> {
-    val result = mutableListOf<FileNode>()
-    fun traverse(node: FileNode) {
-        result.add(node)
-        if (node.isDirectory && node.isExpanded) {
-            node.children.forEach { traverse(it) }
-        }
-    }
-    nodes.forEach { traverse(it) }
-    return result
-}
-
-@Composable
-fun SidebarCard(
-    editorTheme: EditorTheme,
-    workspacePath: String,
-    onAttachFolder: () -> Unit,
-    showRootNewFileDialog: () -> Unit,
-    onRefresh: () -> Unit,
-    fileSearchQuery: String,
-    onFileSearchQueryChange: (String) -> Unit,
-    workspaceFiles: List<FileNode>,
-    selectedFile: CodeFile?,
-    onSelectNode: (FileNode) -> Unit,
-    onToggleExpand: (FileNode) -> Unit,
-    onCreateItem: (parentPath: String?, name: String, isFolder: Boolean, defaultContent: String) -> Unit,
-    onDeleteItem: (FileNode) -> Unit,
-    onRenameItem: (FileNode, String) -> Unit,
-    onDuplicateItem: (FileNode) -> Unit,
-    editorThemeObject: EditorTheme = editorTheme
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(start = 8.dp, top = 8.dp, bottom = 8.dp),
-        colors = CardDefaults.cardColors(containerColor = editorTheme.background.copy(alpha = 0.9f)),
-        border = BorderStroke(1.dp, Color.Gray.copy(alpha = 0.2f)),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Column(modifier = Modifier.fillMaxSize().padding(8.dp)) {
-            // Workspace indicator
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("WORKSPACE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                    Text(workspacePath, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = editorTheme.foreground)
-                }
-                IconButton(
-                    onClick = onAttachFolder,
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.FolderOpen,
-                        contentDescription = "Hubungkan Folder HP",
-                        tint = editorTheme.keywordColor,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            // Action shortcuts inside Workspace
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(
-                    onClick = showRootNewFileDialog,
-                    colors = ButtonDefaults.buttonColors(containerColor = editorTheme.keywordColor.copy(alpha = 0.2f)),
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                ) {
-                    Icon(Icons.Default.NoteAdd, contentDescription = null, modifier = Modifier.size(16.dp), tint = editorTheme.keywordColor)
-                    Spacer(Modifier.width(4.dp))
-                    Text("File Baru", fontSize = 11.sp, color = editorTheme.keywordColor)
-                }
-                Button(
-                    onClick = onRefresh,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Gray.copy(alpha = 0.15f)),
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                ) {
-                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp), tint = editorTheme.foreground)
-                    Spacer(Modifier.width(4.dp))
-                    Text("Segarkan", fontSize = 11.sp, color = editorTheme.foreground)
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            // Workspace file filter input
-            OutlinedTextField(
-                value = fileSearchQuery,
-                onValueChange = onFileSearchQueryChange,
-                placeholder = { Text("Cari file...", fontSize = 12.sp) },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
-                singleLine = true,
-                shape = RoundedCornerShape(8.dp),
-                textStyle = TextStyle(fontSize = 12.sp)
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            // Recursively rendered workspace tree
-            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                if (workspaceFiles.isEmpty()) {
-                    Box(
-                        modifier = Modifier.fillMaxSize().padding(12.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("Workspace kosong. Buat file baru atau hubungkan folder HP Anda.", fontSize = 11.sp, color = Color.Gray)
-                    }
-                } else {
-                    val flattenedNodes = getFlattenedTree(workspaceFiles)
-                    val filteredNodes = flattenedNodes.filter {
-                        fileSearchQuery.isEmpty() || it.name.contains(fileSearchQuery, ignoreCase = true)
-                    }
-
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(filteredNodes) { node ->
-                            FileExplorerItem(
-                                node = node,
-                                isSelected = selectedFile?.githubPath == node.path,
-                                onSelect = { onSelectNode(node) },
-                                onToggleExpand = { onToggleExpand(node) },
-                                onCreateItem = onCreateItem,
-                                onDeleteItem = { onDeleteItem(node) },
-                                onRenameItem = { newName -> onRenameItem(node, newName) },
-                                onDuplicateItem = { onDuplicateItem(node) },
-                                editorTheme = editorTheme
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun DeveloperKeyboardAccessoryBar(
-    editorTheme: EditorTheme,
-    onInsertSymbol: (String) -> Unit,
-    onUndo: () -> Unit,
-    onRedo: () -> Unit,
-    canUndo: Boolean,
-    canRedo: Boolean,
-    onMoveCursorLeft: () -> Unit,
-    onMoveCursorRight: () -> Unit
-) {
-    val symbols = listOf("Tab", "{", "}", "[", "]", "(", ")", ";", "=", "\"", "'", "<", ">", "/", "_", "-", "+")
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(editorTheme.background.copy(alpha = 0.95f))
-            .border(1.dp, Color.Gray.copy(alpha = 0.2f))
-            .horizontalScroll(rememberScrollState())
-            .padding(vertical = 4.dp, horizontal = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Cursor movement keys
-        IconButton(
-            onClick = onMoveCursorLeft,
-            modifier = Modifier
-                .size(34.dp)
-                .background(Color.Gray.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
-        ) {
-            Icon(Icons.Default.ArrowBack, contentDescription = "Move Left", tint = editorTheme.foreground, modifier = Modifier.size(16.dp))
-        }
-        IconButton(
-            onClick = onMoveCursorRight,
-            modifier = Modifier
-                .size(34.dp)
-                .background(Color.Gray.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
-        ) {
-            Icon(Icons.Default.ArrowForward, contentDescription = "Move Right", tint = editorTheme.foreground, modifier = Modifier.size(16.dp))
-        }
-
-        // Undo/Redo keys
-        IconButton(
-            onClick = onUndo,
-            enabled = canUndo,
-            modifier = Modifier
-                .size(34.dp)
-                .background(if (canUndo) Color.Gray.copy(alpha = 0.15f) else Color.Gray.copy(alpha = 0.05f), RoundedCornerShape(4.dp))
-        ) {
-            Icon(Icons.Default.Undo, contentDescription = "Undo", tint = if (canUndo) editorTheme.foreground else Color.Gray.copy(alpha = 0.3f), modifier = Modifier.size(16.dp))
-        }
-        IconButton(
-            onClick = onRedo,
-            enabled = canRedo,
-            modifier = Modifier
-                .size(34.dp)
-                .background(if (canRedo) Color.Gray.copy(alpha = 0.15f) else Color.Gray.copy(alpha = 0.05f), RoundedCornerShape(4.dp))
-        ) {
-            Icon(Icons.Default.Redo, contentDescription = "Redo", tint = if (canRedo) editorTheme.foreground else Color.Gray.copy(alpha = 0.3f), modifier = Modifier.size(16.dp))
-        }
-
-        HorizontalDivider(modifier = Modifier.height(20.dp).width(1.dp), color = Color.Gray.copy(alpha = 0.3f))
-
-        symbols.forEach { symbol ->
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(Color.Gray.copy(alpha = 0.15f))
-                    .clickable {
-                        if (symbol == "Tab") {
-                            onInsertSymbol("    ")
-                        } else {
-                            onInsertSymbol(symbol)
-                        }
-                    }
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
-            ) {
-                Text(
-                    text = symbol,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = editorTheme.foreground
-                )
-            }
-        }
-    }
+    } // End of BoxWithConstraints
+} // End of EditorScreen
 }
