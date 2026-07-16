@@ -1,0 +1,6 @@
+{
+  "name": "Cmnty Studio",
+  "description": "A lightweight, modern, and highly responsive offline programming code editor with syntax highlighting, synchronized scrolling, an offline snippets library, built-in python and node terminal runners, file statistics explorer, third-party plugin extensions, custom themes, and custom background photo uploads.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
